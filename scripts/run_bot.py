@@ -4,6 +4,7 @@ Uso:
     python scripts/run_bot.py
 
 Requer .env com BINANCE_API_KEY / BINANCE_API_SECRET (ou TESTNET=true).
+Opcionalmente GITHUB_TOKEN + GITHUB_REPO para habilitar auto-evolução.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from app.agents import (
     QAAgent,
     ResearchAgent,
     RiskAgent,
+    TradeRecorderAgent,
     TradingManager,
 )
 from app.core.config import settings
@@ -35,12 +37,15 @@ from app.exchanges.binance.adapter import BinanceAdapter
 from app.github.client import GitHubClient
 from app.github.policies import default_policy
 from app.github.workflows import GitHubWorkflows
+from app.market.backfill import HistoryBackfillService
 from app.monitoring.health import HealthChecker
 from app.orchestration.context import AgentContext
 from app.orchestration.orchestrator import Orchestrator
 from app.orchestration.registry import AgentRegistry
+from app.runtime.evolution import EvolutionLoop, NullChangeGenerator
 from app.runtime.heartbeat import HeartbeatMonitor
 from app.runtime.lifecycle import ApplicationLifecycle
+from app.runtime.metrics_collector import MetricsCollector
 from app.runtime.recovery import Reconciler
 
 logger = logging.getLogger(__name__)
@@ -66,7 +71,6 @@ async def main() -> None:
         session_factory=AsyncSessionLocal,
     )
 
-    # GitHub (opcional — só ativa se token+repo preenchidos)
     workflows: GitHubWorkflows | None = None
     gh_client: GitHubClient | None = None
     if settings.github_token and settings.github_repo:
@@ -88,8 +92,11 @@ async def main() -> None:
     registry.register(PortfolioAgent(context))
     registry.register(ExecutionAgent(context))
     registry.register(AuditorAgent(context))
+    registry.register(TradeRecorderAgent(context))
     registry.register(QAAgent(context))
-    registry.register(EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows))
+    registry.register(
+        EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows)
+    )
     registry.register(ResearchAgent(context, workflows=workflows))
     registry.register(MLAgent(context, model_dir=Path("models")))
 
@@ -108,6 +115,11 @@ async def main() -> None:
 
     health = HealthChecker()
     health.register("exchange.ping", exchange.ping)
+
+    backfill = HistoryBackfillService(
+        exchange=exchange,
+        session_factory=AsyncSessionLocal,
+    )
 
     async def heartbeat_task() -> None:
         while True:
@@ -145,7 +157,6 @@ async def main() -> None:
                         )
                     )
             except ExchangeAuthError as exc:
-                # Credenciais ausentes/inválidas — pular ciclo sem tratar como falha sistêmica.
                 logger.warning(
                     "reconcile.skipped",
                     extra={"reason": "auth", "detail": str(exc)},
@@ -154,7 +165,44 @@ async def main() -> None:
                 logger.exception("reconcile.failed")
             await asyncio.sleep(settings.reconcile_interval_s)
 
-    tasks: list = [heartbeat_task, health_task]
+    async def backfill_task() -> None:
+        """Backfill inicial + re-backfill diário."""
+
+        async def _run_once() -> None:
+            try:
+                await backfill.backfill(
+                    symbols=list(settings.trading_symbols),
+                    interval=settings.default_interval,
+                    market_type=market_type,
+                    limit=500,
+                )
+            except Exception:
+                logger.exception("backfill.failed")
+
+        await _run_once()
+        while True:
+            await asyncio.sleep(86400)  # 24h
+            await _run_once()
+
+    async def evolution_task() -> None:
+        collector = MetricsCollector(
+            session_factory=AsyncSessionLocal,
+            lookback_hours=24,
+        )
+
+        async def metrics_provider() -> dict[str, float]:
+            return (await collector.collect()).as_dict()
+
+        loop = EvolutionLoop(
+            workflows=workflows,  # type: ignore[arg-type]
+            metrics_provider=metrics_provider,
+            change_generator=NullChangeGenerator(),
+            interval_seconds=settings.evolution_interval_s,
+            cooldown_seconds=settings.evolution_cooldown_s,
+        )
+        await loop.run_forever()
+
+    tasks: list = [heartbeat_task, health_task, backfill_task]
     if settings.binance_api_key and settings.binance_api_secret:
         tasks.append(reconcile_task)
     else:
@@ -163,6 +211,33 @@ async def main() -> None:
             extra={
                 "reason": "BINANCE_API_KEY/SECRET ausentes no .env",
                 "hint": "preencha .env para ativar a reconciliação DB <-> exchange",
+            },
+        )
+
+    if workflows is not None:
+        tasks.append(evolution_task)
+        if workflows.enabled:
+            logger.info(
+                "evolution.loop_enabled",
+                extra={
+                    "interval_s": settings.evolution_interval_s,
+                    "cooldown_s": settings.evolution_cooldown_s,
+                },
+            )
+        else:
+            logger.info(
+                "evolution.loop_in_observation_mode",
+                extra={
+                    "reason": "GITHUB_AUTONOMY_ENABLED=false",
+                    "hint": "defina como true no .env para permitir PRs automáticos",
+                },
+            )
+    else:
+        logger.warning(
+            "evolution.disabled",
+            extra={
+                "reason": "GITHUB_TOKEN/GITHUB_REPO ausentes no .env",
+                "hint": "preencha .env para ativar o loop de evolução",
             },
         )
 

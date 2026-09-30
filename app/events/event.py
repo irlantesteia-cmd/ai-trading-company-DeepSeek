@@ -3,6 +3,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.models.order import Order
+
 
 class Event(BaseModel):
     """Evento base — todos os eventos do sistema derivam deste."""
@@ -42,10 +44,19 @@ class OrderSubmitted(Event):
 
 
 class OrderFilled(Event):
+    """Ordem preenchida (total ou parcialmente).
+
+    Carrega o `Order` completo — com a lista de `fills` — para permitir que
+    ouvintes persistam cada fill como um `TradeORM`. Eventos antigos que
+    omitem `order` continuam válidos (`order=None`); o `TradeRecorderAgent`
+    ignora esses casos com log de debug.
+    """
+
     exchange_order_id: str
     symbol: str
     filled_quantity: float
     average_price: float
+    order: Order | None = None
 
 
 class OrderRejected(Event):

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.core.enums import AgentRole, MarketType
+from app.database.repositories.candle import CandleRepository
 from app.domain.models.market import Candle
 from app.domain.models.signal import Signal
 from app.features.pipeline import FeaturePipeline, default_pipeline
@@ -18,10 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class MLAgent(BaseAgent):
-    """Agente de ML: treina/avalia/versiona modelos e gera sinais via MLSignalGenerator.
+    """Agente de ML: treina, avalia, versiona e gera sinais.
 
-    O diretório padrão é `models/` (gitignored). Cada modelo é salvo como
-    `<version>.joblib` + `<version>.json` (metadados).
+    Modelos salvos como `<version>.joblib` + `<version>.json` em `models/`.
+
+    `train()` aceita candles injetados (`candles=...`) ou, quando None,
+    carrega do DB via `CandleRepository` — usa `context.session_factory`.
     """
 
     role = AgentRole.ML
@@ -55,11 +58,28 @@ class MLAgent(BaseAgent):
         self,
         *,
         symbol: str,
-        candles: list[Candle],
+        candles: list[Candle] | None = None,
+        market_type: MarketType = MarketType.FUTURES,
+        interval: str = "5m",
+        limit: int = 500,
         test_size: float = 0.2,
         random_state: int = 42,
         C: float = 1.0,
     ) -> TrainingResult:
+        if candles is None:
+            candles = await self._load_candles_from_db(
+                symbol=symbol,
+                market_type=market_type,
+                interval=interval,
+                limit=limit,
+            )
+
+        if len(candles) < 50:
+            raise ValueError(
+                f"candles insuficientes para treino: {len(candles)} "
+                f"(mínimo 50; rode o backfill primeiro)"
+            )
+
         dataset = build_dataset(
             candles, pipeline=self._pipeline, horizon=self._horizon
         )
@@ -87,6 +107,46 @@ class MLAgent(BaseAgent):
             },
         )
         return result
+
+    async def _load_candles_from_db(
+        self,
+        *,
+        symbol: str,
+        market_type: MarketType,
+        interval: str,
+        limit: int,
+    ) -> list[Candle]:
+        if self.context.session_factory is None:
+            raise RuntimeError(
+                "session_factory ausente no AgentContext; "
+                "injete candles=... ou configure o contexto"
+            )
+        async with self.context.session_factory() as session:
+            repo = CandleRepository(session)
+            rows = await repo.get_recent(
+                symbol=symbol,
+                market_type=market_type,
+                interval=interval,
+                limit=limit,
+            )
+
+        return [
+            Candle(
+                symbol=r.symbol,
+                market_type=MarketType(r.market_type),
+                interval=r.interval,
+                open_time=r.open_time,
+                close_time=r.close_time,
+                open=r.open,
+                high=r.high,
+                low=r.low,
+                close=r.close,
+                volume=r.volume,
+                trades=r.trades,
+                closed=True,
+            )
+            for r in rows
+        ]
 
     # ---------------------------------------------------------------- predict
     async def predict(

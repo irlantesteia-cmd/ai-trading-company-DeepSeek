@@ -1,7 +1,7 @@
 import pytest
 
 from app.github.types import FileChange, ProposedChange, PullRequestResult
-from app.runtime.evolution import EvolutionLoop
+from app.runtime.evolution import EvolutionLoop, NullChangeGenerator
 
 
 class _StubWorkflows:
@@ -31,6 +31,13 @@ def _change() -> ProposedChange:
 
 
 @pytest.mark.asyncio
+async def test_null_change_generator_always_returns_none():
+    gen = NullChangeGenerator()
+    assert await gen({"num_trades": 0}) is None
+    assert await gen({"num_trades": 100, "win_rate": 0.1}) is None
+
+
+@pytest.mark.asyncio
 async def test_tick_noop_when_disabled():
     wf = _StubWorkflows(enabled=False)
     calls = {"n": 0}
@@ -49,7 +56,7 @@ async def test_tick_noop_when_disabled():
     )
     result = await loop.tick()
     assert result is None
-    assert calls["n"] == 0  # nem chamou métricas
+    assert calls["n"] == 0
 
 
 @pytest.mark.asyncio
@@ -95,6 +102,23 @@ async def test_tick_noop_when_generator_returns_none():
 
 
 @pytest.mark.asyncio
+async def test_tick_with_null_generator_never_proposes():
+    wf = _StubWorkflows()
+
+    async def metrics():
+        return {"num_trades": 999, "win_rate": 0.05}
+
+    loop = EvolutionLoop(
+        workflows=wf,  # type: ignore[arg-type]
+        metrics_provider=metrics,
+        change_generator=NullChangeGenerator(),
+    )
+    assert await loop.tick() is None
+    assert wf.calls == []
+    assert loop.proposals == 0
+
+
+@pytest.mark.asyncio
 async def test_cooldown_prevents_burst():
     wf = _StubWorkflows()
     now = [1000.0]
@@ -116,13 +140,11 @@ async def test_cooldown_prevents_burst():
     r1 = await loop.tick()
     assert r1 is not None
 
-    # Ainda dentro do cooldown
     now[0] = 1200.0
     r2 = await loop.tick()
     assert r2 is None
     assert loop.proposals == 1
 
-    # Passou do cooldown
     now[0] = 1600.0
     r3 = await loop.tick()
     assert r3 is not None
