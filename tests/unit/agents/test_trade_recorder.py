@@ -47,22 +47,22 @@ def _order_with_two_fills() -> Order:
         side=OrderSide.BUY,
         type=OrderType.MARKET,
         status=OrderStatus.FILLED,
-        quantity=Decimal("1"),
-        executed_quantity=Decimal("1"),
-        average_price=Decimal("60005"),
+        quantity=Decimal(1),
+        executed_quantity=Decimal(1),
+        average_price=Decimal(60005),
         position_side=PositionSide.LONG,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         fills=[
             OrderFill(
-                price=Decimal("60000"),
+                price=Decimal(60000),
                 quantity=Decimal("0.5"),
                 commission=Decimal("0.01"),
                 commission_asset="USDT",
                 timestamp=datetime.now(UTC),
             ),
             OrderFill(
-                price=Decimal("60010"),
+                price=Decimal(60010),
                 quantity=Decimal("0.5"),
                 commission=Decimal("0.01"),
                 commission_asset="USDT",
@@ -104,11 +104,11 @@ async def test_persists_one_row_per_fill(context):
     assert t0.side == "BUY"
     assert t0.position_side == "LONG"
     assert t0.quantity == Decimal("0.5")
-    assert t0.price == Decimal("60000")
+    assert t0.price == Decimal(60000)
     assert t0.fee == Decimal("0.01")
     assert t0.fee_asset == "USDT"
     assert t1.trade_id == "1-1"
-    assert t1.price == Decimal("60010")
+    assert t1.price == Decimal(60010)
 
 
 @pytest.mark.asyncio
@@ -212,16 +212,16 @@ async def test_spot_order_without_position_side(context):
         side=OrderSide.SELL,
         type=OrderType.MARKET,
         status=OrderStatus.FILLED,
-        quantity=Decimal("2"),
-        executed_quantity=Decimal("2"),
-        average_price=Decimal("3000"),
+        quantity=Decimal(2),
+        executed_quantity=Decimal(2),
+        average_price=Decimal(3000),
         position_side=None,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         fills=[
             OrderFill(
-                price=Decimal("3000"),
-                quantity=Decimal("2"),
+                price=Decimal(3000),
+                quantity=Decimal(2),
                 commission=Decimal("0.5"),
                 commission_asset="USDT",
                 timestamp=datetime.now(UTC),
