@@ -20,7 +20,9 @@ def _trending_candles(n: int = 300):
 @pytest.mark.asyncio
 async def test_train_saves_artifacts(context, tmp_path: Path):
     agent = MLAgent(context, model_dir=tmp_path)
-    result = await agent.train(symbol="BTCUSDT", candles=_trending_candles(300))
+    result = await agent.train(
+        symbol="BTCUSDT", candles=_trending_candles(300)
+    )
     artifacts = list(tmp_path.glob("*.joblib"))
     metas = list(tmp_path.glob("*.json"))
     assert len(artifacts) == 1
@@ -30,12 +32,18 @@ async def test_train_saves_artifacts(context, tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_train_rejects_too_few_candles(context, tmp_path: Path):
+    agent = MLAgent(context, model_dir=tmp_path)
+    with pytest.raises(ValueError, match="insuficientes"):
+        await agent.train(symbol="BTCUSDT", candles=_trending_candles(30))
+
+
+@pytest.mark.asyncio
 async def test_predict_uses_trained_model(context, tmp_path: Path):
     agent = MLAgent(context, model_dir=tmp_path)
     candles = _trending_candles(300)
     await agent.train(symbol="BTCUSDT", candles=candles)
     sig = await agent.predict(symbol="BTCUSDT", candles=candles[-80:])
-    # Sinal pode ser None se proba ficar no meio, mas não pode dar erro.
     if sig is not None:
         assert sig.symbol == "BTCUSDT"
         assert sig.strategy == "ml_classifier"
@@ -54,7 +62,6 @@ async def test_predict_loads_from_disk_when_cache_empty(context, tmp_path: Path)
     candles = _trending_candles(300)
     await agent1.train(symbol="BTCUSDT", candles=candles)
 
-    # Novo agente, sem cache em memória, deve carregar do disco
     agent2 = MLAgent(context, model_dir=tmp_path)
     sig = await agent2.predict(
         symbol="BTCUSDT",
@@ -62,7 +69,6 @@ async def test_predict_loads_from_disk_when_cache_empty(context, tmp_path: Path)
         market_type=MarketType.FUTURES,
         interval="5m",
     )
-    # Sem garantia do sinal, mas o carregamento não pode falhar.
     assert sig is None or sig.symbol == "BTCUSDT"
 
 

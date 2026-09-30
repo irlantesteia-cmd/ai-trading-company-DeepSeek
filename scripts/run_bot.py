@@ -37,6 +37,7 @@ from app.exchanges.binance.adapter import BinanceAdapter
 from app.github.client import GitHubClient
 from app.github.policies import default_policy
 from app.github.workflows import GitHubWorkflows
+from app.market.backfill import HistoryBackfillService
 from app.monitoring.health import HealthChecker
 from app.orchestration.context import AgentContext
 from app.orchestration.orchestrator import Orchestrator
@@ -115,6 +116,11 @@ async def main() -> None:
     health = HealthChecker()
     health.register("exchange.ping", exchange.ping)
 
+    backfill = HistoryBackfillService(
+        exchange=exchange,
+        session_factory=AsyncSessionLocal,
+    )
+
     async def heartbeat_task() -> None:
         while True:
             for agent in registry.all():
@@ -159,6 +165,25 @@ async def main() -> None:
                 logger.exception("reconcile.failed")
             await asyncio.sleep(settings.reconcile_interval_s)
 
+    async def backfill_task() -> None:
+        """Backfill inicial + re-backfill diário."""
+
+        async def _run_once() -> None:
+            try:
+                await backfill.backfill(
+                    symbols=list(settings.trading_symbols),
+                    interval=settings.default_interval,
+                    market_type=market_type,
+                    limit=500,
+                )
+            except Exception:
+                logger.exception("backfill.failed")
+
+        await _run_once()
+        while True:
+            await asyncio.sleep(86400)  # 24h
+            await _run_once()
+
     async def evolution_task() -> None:
         collector = MetricsCollector(
             session_factory=AsyncSessionLocal,
@@ -177,7 +202,7 @@ async def main() -> None:
         )
         await loop.run_forever()
 
-    tasks: list = [heartbeat_task, health_task]
+    tasks: list = [heartbeat_task, health_task, backfill_task]
     if settings.binance_api_key and settings.binance_api_secret:
         tasks.append(reconcile_task)
     else:
