@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
 from app.agents.base import BaseAgent
 from app.core.enums import AgentRole, MarketType
 from app.database.repositories.candle import CandleRepository
