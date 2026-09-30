@@ -1,19 +1,41 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
+build/
+dist/
+
+# Virtual envs
 .venv/
 venv/
+env/
+
+# Env files — NUNCA commitar segredos
 .env
 .env.*
 !.env.example
+
+# Testes / linters
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-build/
-dist/
-logs/
-data/
-artifacts/
-models/
+.coverage
+htmlcov/
+
+# Artefatos locais (SOMENTE na raiz — prefixo "/" evita capturar
+# subdiretórios como app/domain/models/)
+/logs/
+/data/
+/artifacts/
+/models/
+
+# Logs
 *.log
+
+# Sistema
 .DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
