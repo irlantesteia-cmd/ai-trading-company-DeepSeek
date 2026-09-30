@@ -23,6 +23,7 @@ from app.agents import (
     QAAgent,
     ResearchAgent,
     RiskAgent,
+    TradeRecorderAgent,
     TradingManager,
 )
 from app.core.config import settings
@@ -90,6 +91,7 @@ async def main() -> None:
     registry.register(PortfolioAgent(context))
     registry.register(ExecutionAgent(context))
     registry.register(AuditorAgent(context))
+    registry.register(TradeRecorderAgent(context))
     registry.register(QAAgent(context))
     registry.register(
         EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows)
