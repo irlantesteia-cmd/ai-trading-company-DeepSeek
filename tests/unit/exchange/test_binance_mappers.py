@@ -1,0 +1,214 @@
+from datetime import UTC
+from decimal import Decimal
+
+from app.core.enums import (
+    MarginType,
+    MarketType,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PositionSide,
+    TimeInForce,
+)
+from app.exchanges.binance.mappers import (
+    map_futures_position,
+    map_kline,
+    map_order,
+    map_order_book,
+    map_ticker,
+    order_request_to_params,
+)
+
+
+def test_map_ticker_spot():
+    raw = {
+        "symbol": "BTCUSDT",
+        "bidPrice": "60000.10",
+        "askPrice": "60000.20",
+        "lastPrice": "60000.15",
+        "volume": "1234.5",
+        "closeTime": 1_700_000_000_000,
+    }
+    t = map_ticker(raw, MarketType.SPOT)
+    assert t.symbol == "BTCUSDT"
+    assert t.bid == Decimal("60000.10")
+    assert t.last == Decimal("60000.15")
+    assert t.timestamp.tzinfo == UTC
+
+
+def test_map_kline_spot():
+    row = [
+        1_700_000_000_000,
+        "1.0",
+        "2.0",
+        "0.5",
+        "1.5",
+        "100.0",
+        1_700_000_059_999,
+        "150.0",
+        42,
+        "50.0",
+        "75.0",
+        "0",
+    ]
+    c = map_kline(row, MarketType.SPOT, "BTCUSDT", "1m")
+    assert c.close == Decimal("1.5")
+    assert c.trades == 42
+    assert c.closed is True
+
+
+def test_map_order_book():
+    raw = {
+        "lastUpdateId": 999,
+        "bids": [["100.0", "1.0"], ["99.5", "2.0"]],
+        "asks": [["100.5", "0.5"]],
+    }
+    ob = map_order_book(raw, "BTCUSDT", MarketType.SPOT)
+    assert ob.last_update_id == 999
+    assert ob.bids[0].price == Decimal("100.0")
+    assert ob.asks[0].quantity == Decimal("0.5")
+
+
+def test_map_order_spot_with_fills():
+    raw = {
+        "orderId": 123,
+        "clientOrderId": "c-1",
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "type": "LIMIT",
+        "status": "FILLED",
+        "origQty": "1.0",
+        "executedQty": "1.0",
+        "price": "60000",
+        "avgPrice": "60000",
+        "timeInForce": "GTC",
+        "time": 1_700_000_000_000,
+        "updateTime": 1_700_000_001_000,
+        "fills": [
+            {
+                "price": "60000",
+                "qty": "1.0",
+                "commission": "0.001",
+                "commissionAsset": "BTC",
+            }
+        ],
+    }
+    o = map_order(raw, MarketType.SPOT)
+    assert o.status is OrderStatus.FILLED
+    assert o.side is OrderSide.BUY
+    assert o.type is OrderType.LIMIT
+    assert o.time_in_force is TimeInForce.GTC
+    assert o.remaining_quantity == Decimal(0)
+    assert o.fills[0].commission == Decimal("0.001")
+
+
+def test_order_request_to_params_spot():
+    params = order_request_to_params(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type_=OrderType.LIMIT,
+        quantity=Decimal("0.5"),
+        client_order_id="c-1",
+        market_type=MarketType.SPOT,
+        price=Decimal(60000),
+        time_in_force=TimeInForce.GTC,
+    )
+    assert params["newOrderRespType"] == "FULL"
+    assert params["price"] == "60000"
+    assert params["timeInForce"] == "GTC"
+    assert "reduceOnly" not in params
+
+
+def test_order_request_to_params_futures_reduce_only():
+    params = order_request_to_params(
+        symbol="BTCUSDT",
+        side=OrderSide.SELL,
+        type_=OrderType.MARKET,
+        quantity=Decimal("0.5"),
+        client_order_id="c-2",
+        market_type=MarketType.FUTURES,
+        reduce_only=True,
+        position_side=PositionSide.LONG,
+    )
+    assert params["reduceOnly"] == "true"
+    assert params["positionSide"] == "LONG"
+    assert "newOrderRespType" not in params
+
+
+def test_map_futures_position_long():
+    raw = {
+        "symbol": "BTCUSDT",
+        "positionAmt": "0.5",
+        "entryPrice": "60000",
+        "markPrice": "61000",
+        "unRealizedProfit": "500",
+        "leverage": "10",
+        "marginType": "isolated",
+        "isolatedMargin": "3000",
+        "liquidationPrice": "50000",
+        "positionSide": "BOTH",
+        "updateTime": 1_700_000_000_000,
+    }
+    pos = map_futures_position(raw)
+    assert pos.position_side is PositionSide.LONG
+    assert pos.margin_type is MarginType.ISOLATED
+    assert pos.quantity == Decimal("0.5")
+    assert pos.notional == Decimal("0.5") * Decimal(61000)
+    assert pos.is_open is True
+
+
+def test_map_futures_position_short_from_negative_amt():
+    raw = {
+        "symbol": "ETHUSDT",
+        "positionAmt": "-2",
+        "entryPrice": "3000",
+        "markPrice": "2950",
+        "unRealizedProfit": "100",
+        "leverage": "5",
+        "marginType": "cross",
+        "isolatedMargin": "0",
+        "positionSide": "BOTH",
+        "updateTime": 1_700_000_000_000,
+    }
+    pos = map_futures_position(raw)
+    assert pos.position_side is PositionSide.SHORT
+    assert pos.margin_type is MarginType.CROSSED
+    assert pos.quantity == Decimal(2)
+
+
+def test_map_futures_position_crossed_margin_aliases():
+    """Binance devolve "cross"; domínio usa CROSSED. Também aceitamos o alias "crossed"."""
+    for alias in ("cross", "CROSS", "crossed", "CROSSED"):
+        raw = {
+            "symbol": "SOLUSDT",
+            "positionAmt": "1",
+            "entryPrice": "100",
+            "markPrice": "101",
+            "unRealizedProfit": "1",
+            "leverage": "3",
+            "marginType": alias,
+            "isolatedMargin": "0",
+            "positionSide": "BOTH",
+            "updateTime": 1_700_000_000_000,
+        }
+        assert map_futures_position(raw).margin_type is MarginType.CROSSED
+
+
+def test_map_futures_position_isolated_bool_fallback():
+    """Quando só vem o campo booleano `isolated`, usamos ele."""
+    raw_isolated = {
+        "symbol": "XRPUSDT",
+        "positionAmt": "10",
+        "entryPrice": "0.5",
+        "markPrice": "0.51",
+        "unRealizedProfit": "0.1",
+        "leverage": "2",
+        "isolated": True,
+        "isolatedMargin": "2.5",
+        "positionSide": "BOTH",
+        "updateTime": 1_700_000_000_000,
+    }
+    assert map_futures_position(raw_isolated).margin_type is MarginType.ISOLATED
+
+    raw_cross = dict(raw_isolated, isolated=False)
+    assert map_futures_position(raw_cross).margin_type is MarginType.CROSSED
