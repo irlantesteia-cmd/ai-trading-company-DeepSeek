@@ -1,3 +1,12 @@
+"""Loop de evolução controlada.
+
+Coleta métricas periodicamente, decide se vale propor uma mudança, e —
+se sim — abre um PR via `GitHubWorkflows` (sujeito à política de autonomia).
+
+O gerador padrão (`NullChangeGenerator`) nunca propõe nada. Habilitar
+evolução real significa injetar um `ChangeGenerator` customizado.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +21,19 @@ logger = logging.getLogger(__name__)
 
 MetricsProvider = Callable[[], Awaitable[dict[str, float]]]
 ChangeGenerator = Callable[[dict[str, float]], Awaitable[ProposedChange | None]]
+
+
+class NullChangeGenerator:
+    """Gerador padrão seguro: nunca propõe mudança.
+
+    Existe como placeholder explícito — o `EvolutionLoop` coleta métricas
+    e loga, mas fica em modo observação. Para habilitar evolução real,
+    substitua por uma implementação que retorne `ProposedChange` quando
+    detectar degradação.
+    """
+
+    async def __call__(self, metrics: dict[str, float]) -> ProposedChange | None:
+        return None
 
 
 class EvolutionLoop:
@@ -53,6 +75,10 @@ class EvolutionLoop:
     def proposals(self) -> int:
         return self._proposals
 
+    @property
+    def interval_seconds(self) -> float:
+        return self._interval
+
     def _cooldown_active(self) -> bool:
         if self._last_proposal_at is None:
             return False
@@ -62,6 +88,7 @@ class EvolutionLoop:
         """Um ciclo único, sem sleep. Retorna o PR se houve proposta."""
         self._cycles += 1
         if not self._workflows.enabled:
+            logger.debug("evolution.autonomy_disabled")
             return None
         if self._cooldown_active():
             logger.debug("evolution.cooldown_active")
@@ -70,14 +97,27 @@ class EvolutionLoop:
         metrics = await self._metrics_provider()
         change = await self._change_generator(metrics)
         if change is None:
+            logger.debug(
+                "evolution.no_change_proposed",
+                extra={"metrics": metrics},
+            )
             return None
 
         result = await self._workflows.propose_change(change)
         self._last_proposal_at = self._clock()
         self._proposals += 1
+        logger.info(
+            "evolution.proposal_opened",
+            extra={
+                "number": result.number,
+                "url": result.url,
+                "title": result.title,
+            },
+        )
         return result
 
     async def run_forever(self) -> None:
+        """Loop infinito com sleep entre ciclos. Captura exceções por ciclo."""
         while True:
             try:
                 await self.tick()
