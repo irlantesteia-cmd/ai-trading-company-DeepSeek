@@ -55,6 +55,17 @@ class TradingManager(BaseAgent):
 
         try:
             await self.process_signal(event.signal)
+        except ValueError as exc:
+            # Estado operacional (ex.: equity zero, dados incompletos) —
+            # o mundo real. Log como warning, sem stack trace.
+            logger.warning(
+                "trading_manager.signal_processing_skipped",
+                extra={
+                    "signal_id": event.signal_id,
+                    "symbol": event.symbol,
+                    "reason": str(exc),
+                },
+            )
         except Exception:
             logger.exception(
                 "trading_manager.process_signal_failed",

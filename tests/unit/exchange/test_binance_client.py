@@ -12,7 +12,7 @@ from app.core.exceptions import (
     ExchangeOrderRejectedError,
 )
 from app.exchanges.binance.client import (
-    SPOT_REST_TESTNET,
+    SPOT_REST_DEMO,
     BinanceClient,
 )
 
@@ -36,7 +36,7 @@ def _mock_server_time(mock, path: str = "/api/v3/time") -> None:
     )
 
 
-def test_sign_query_is_hmac_sha256_of_string():
+def test_signature_hmac_sha256():
     c = _client()
     qs = "symbol=BTCUSDT&side=BUY&timestamp=1&recvWindow=5000"
     expected = hmac.new(b"secret", qs.encode(), hashlib.sha256).hexdigest()
@@ -46,16 +46,15 @@ def test_sign_query_is_hmac_sha256_of_string():
 def test_build_url_puts_signature_last():
     c = _client()
     url = c._build_url(
-        SPOT_REST_TESTNET,
+        SPOT_REST_DEMO,
         "/api/v3/account",
         {},
         signed=True,
         market_type=MarketType.SPOT,
     )
-    assert url.startswith(f"{SPOT_REST_TESTNET}/api/v3/account?")
+    assert url.startswith(f"{SPOT_REST_DEMO}/api/v3/account?")
     assert "timestamp=" in url
     assert "recvWindow=" in url
-    # signature é o último parâmetro
     tail = url.split("?", 1)[1]
     assert tail.split("&")[-1].startswith("signature=")
 
@@ -63,20 +62,20 @@ def test_build_url_puts_signature_last():
 def test_build_url_unsigned_without_params():
     c = _client()
     url = c._build_url(
-        SPOT_REST_TESTNET,
+        SPOT_REST_DEMO,
         "/api/v3/ping",
         {},
         signed=False,
         market_type=MarketType.SPOT,
     )
-    assert url == f"{SPOT_REST_TESTNET}/api/v3/ping"
+    assert url == f"{SPOT_REST_DEMO}/api/v3/ping"
 
 
 @pytest.mark.asyncio
 async def test_sync_time_computes_offset():
     c = _client()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             _mock_server_time(mock)
             offset = await c.sync_time(MarketType.SPOT)
             assert c.time_offset_ms[MarketType.SPOT] == offset
@@ -89,7 +88,7 @@ async def test_sync_time_computes_offset():
 async def test_signed_request_requires_successful_time_sync():
     c = _client(time_sync_attempts=2)
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             mock.get("/api/v3/time").mock(
                 side_effect=[
                     Response(500, text="boom"),
@@ -111,7 +110,7 @@ async def test_signed_request_requires_successful_time_sync():
 async def test_signed_request_retries_time_sync_then_succeeds():
     c = _client(time_sync_attempts=2)
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             mock.get("/api/v3/time").mock(
                 side_effect=[
                     Response(500, text="boom"),
@@ -134,13 +133,9 @@ async def test_signed_request_retries_time_sync_then_succeeds():
 
 @pytest.mark.asyncio
 async def test_signed_request_signature_matches_sent_query():
-    """A assinatura enviada deve bater com a query string efetivamente transmitida.
-
-    Este é o teste-chave do bug -1022: HMAC do que foi enviado == signature.
-    """
     c = _client()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             _mock_server_time(mock)
             route = mock.get("/api/v3/account").mock(
                 return_value=Response(200, json={"balances": []})
@@ -169,7 +164,7 @@ async def test_signed_request_signature_matches_sent_query():
 async def test_request_retries_on_5xx():
     c = _client()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             mock.get("/api/v3/ping").mock(
                 side_effect=[
                     Response(500, text="boom"),
@@ -188,7 +183,7 @@ async def test_request_retries_on_5xx():
 async def test_auth_error_mapping():
     c = _client()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             _mock_server_time(mock)
             mock.get("/api/v3/account").mock(
                 return_value=Response(
@@ -211,7 +206,7 @@ async def test_auth_error_mapping():
 async def test_order_rejected_error_mapping():
     c = _client()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             _mock_server_time(mock)
             mock.post("/api/v3/order").mock(
                 return_value=Response(
@@ -234,7 +229,7 @@ async def test_order_rejected_error_mapping():
 async def test_timestamp_error_1021_triggers_resync_and_retry():
     c = _client()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             time_route = mock.get("/api/v3/time").mock(
                 return_value=Response(200, json={"serverTime": FIXED_SERVER_TIME_MS})
             )
@@ -262,10 +257,9 @@ async def test_timestamp_error_1021_triggers_resync_and_retry():
 
 @pytest.mark.asyncio
 async def test_timestamp_error_1022_triggers_resync_and_retry():
-    """-1022 (assinatura inválida) também dispara re-sync + retry."""
     c = _client()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             time_route = mock.get("/api/v3/time").mock(
                 return_value=Response(200, json={"serverTime": FIXED_SERVER_TIME_MS})
             )

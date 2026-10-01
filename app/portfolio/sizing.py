@@ -11,7 +11,7 @@ from app.portfolio.state import PortfolioState
 
 logger = logging.getLogger(__name__)
 
-_QTY_STEP = Decimal("0.00000001")  # 8 casas — chão seguro; a Binance arredonda ao step real
+_QTY_STEP = Decimal("0.00000001")  # 8 casas
 
 
 class PositionSizer:
@@ -53,6 +53,13 @@ class PositionSizer:
         if decision.action.value != "APPROVE":
             raise ValueError(f"sizing requer decision APPROVE, got {decision.action}")
 
+        if state.equity <= 0:
+            raise ValueError(
+                f"equity do portfólio é {state.equity}; "
+                f"verifique o saldo da conta Binance "
+                f"(demo: https://demo.binance.com/en/futures/BTCUSDT)"
+            )
+
         if signal.suggested_entry is None:
             raise ValueError("Signal sem suggested_entry")
 
@@ -64,7 +71,11 @@ class PositionSizer:
             stop = signal.suggested_stop
         else:
             delta = entry * self._default_stop_pct
-            stop = entry - delta if signal.direction == SignalDirection.LONG else entry + delta
+            stop = (
+                entry - delta
+                if signal.direction == SignalDirection.LONG
+                else entry + delta
+            )
 
         stop_distance = abs(entry - stop)
         if stop_distance == 0:

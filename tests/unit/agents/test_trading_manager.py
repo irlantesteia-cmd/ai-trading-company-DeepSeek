@@ -15,6 +15,7 @@ from app.core.enums import (
     SignalDirection,
 )
 from app.domain.models.order import Order
+from app.domain.models.position import SpotBalance
 from app.domain.models.signal import Signal
 from app.events.event import SignalApproved, SignalGenerated, SignalRejected
 
@@ -97,7 +98,6 @@ async def test_approves_and_places_order(context):
 
 @pytest.mark.asyncio
 async def test_auto_execution_disabled_ignores_signal(context):
-    """Com signal_auto_execution_enabled=False, sinal é logado e ignorado."""
     context.settings.signal_auto_execution_enabled = False
     manager = _wire(context)
     await manager.start()
@@ -118,7 +118,6 @@ async def test_auto_execution_disabled_ignores_signal(context):
 
 @pytest.mark.asyncio
 async def test_auto_execution_enabled_processes_signal(context):
-    """Com signal_auto_execution_enabled=True, sinal vira ordem."""
     context.settings.signal_auto_execution_enabled = True
     manager = _wire(context)
 
@@ -154,7 +153,6 @@ async def test_auto_execution_enabled_processes_signal(context):
 
 @pytest.mark.asyncio
 async def test_auto_execution_enabled_missing_payload_is_ignored(context):
-    """Sinal sem payload de `Signal` → warning, sem ordem."""
     context.settings.signal_auto_execution_enabled = True
     manager = _wire(context)
     await manager.start()
@@ -167,6 +165,31 @@ async def test_auto_execution_enabled_missing_payload_is_ignored(context):
             direction="LONG",
             confidence=0.9,
             signal=None,
+        )
+    )
+
+    context.exchange.orders.place_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_value_error_in_sizing_does_not_crash_and_does_not_place(context):
+    """Equity zero → ValueError no sizer → warning, sem ordem, sem crash."""
+    context.settings.signal_auto_execution_enabled = True
+    manager = _wire(context)
+
+    context.exchange.account.get_futures_balance.return_value = SpotBalance(
+        asset="USDT", free=Decimal(0), locked=Decimal(0)
+    )
+    await manager.start()
+
+    await context.event_bus.publish(
+        SignalGenerated(
+            signal_id="s-1",
+            symbol="BTCUSDT",
+            agent="asset::BTCUSDT",
+            direction="LONG",
+            confidence=0.9,
+            signal=_signal(),
         )
     )
 

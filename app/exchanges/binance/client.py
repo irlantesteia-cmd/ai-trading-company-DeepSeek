@@ -21,10 +21,13 @@ from app.core.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+# Produção
 SPOT_REST_PROD = "https://api.binance.com"
-SPOT_REST_TESTNET = "https://testnet.binance.vision"
 FUTURES_REST_PROD = "https://fapi.binance.com"
-FUTURES_REST_TESTNET = "https://testnet.binancefuture.com"
+
+# Demo Trading (substitui o antigo testnet.binancefuture.com)
+SPOT_REST_DEMO = "https://demo-api.binance.com"
+FUTURES_REST_DEMO = "https://demo-fapi.binance.com"
 
 _WEIGHT_LIMIT = {
     MarketType.SPOT: 1200,
@@ -35,20 +38,16 @@ _WEIGHT_LIMIT = {
 class BinanceClient:
     """Cliente REST assinado (HMAC-SHA256).
 
-    **Assinatura byte-a-byte:** a query string assinada é EXATAMENTE a string
-    enviada. Passar `params=dict(...)` para o httpx é um bug clássico: o httpx
-    re-serializa, reordena e reencoda — o HMAC deixa de bater com -1022. Aqui
-    montamos a string uma vez com `urlencode`, assinamos essa string, e enviamos
-    a URL já completa (path + "?" + qs + "&signature=...") sem `params`.
+    Endpoints:
+        - Produção: api.binance.com / fapi.binance.com
+        - Demo Trading: demo-api.binance.com / demo-fapi.binance.com
+          (a Binance descontinuou o testnet.binancefuture.com em 2026)
 
     Recursos:
-        - Time sync com /time por mercado (uma vez, sob lock), compensando
-          clock drift do SO (comum em WSL2/Docker Desktop).
+        - Time sync com /time por mercado (compensação de clock drift).
         - Retry exponencial em 5xx / rate-limit / rede.
-        - Re-sync automático em -1021 (timestamp fora) e -1022 (assinatura
-          inválida — que pode ser drift OU byte-mismatch).
-        - Requests assinadas NÃO prosseguem se o time sync falhar: preferimos
-          falhar explícito a assinar errado.
+        - Re-sync automático em -1021 / -1022 (assinatura inválida).
+        - Requests assinadas NÃO prosseguem se o time sync falhar.
     """
 
     def __init__(
@@ -81,8 +80,8 @@ class BinanceClient:
         }
         self._time_sync_lock = asyncio.Lock()
         self._base_urls = {
-            MarketType.SPOT: SPOT_REST_TESTNET if testnet else SPOT_REST_PROD,
-            MarketType.FUTURES: FUTURES_REST_TESTNET if testnet else FUTURES_REST_PROD,
+            MarketType.SPOT: SPOT_REST_DEMO if testnet else SPOT_REST_PROD,
+            MarketType.FUTURES: FUTURES_REST_DEMO if testnet else FUTURES_REST_PROD,
         }
         self._http = httpx.AsyncClient(timeout=timeout)
 
@@ -103,7 +102,6 @@ class BinanceClient:
 
     # ------------------------------------------------------------------ signing
     def _sign_query(self, query_string: str) -> str:
-        """Assina uma query string já urlencoded. Não reencoda nada."""
         return hmac.new(
             self._api_secret.encode(),
             query_string.encode(),
@@ -119,10 +117,6 @@ class BinanceClient:
         signed: bool,
         market_type: MarketType,
     ) -> str:
-        """Monta a URL final com a query string EXATA que foi assinada.
-
-        Ordem: base_params, timestamp, recvWindow, signature (ao final).
-        """
         query = dict(params)
         if signed:
             query["timestamp"] = (
@@ -141,7 +135,6 @@ class BinanceClient:
 
     # -------------------------------------------------------------- time sync
     async def sync_time(self, market_type: MarketType) -> int:
-        """Consulta /time e calcula offset (server - local_mid). Sob lock."""
         async with self._time_sync_lock:
             return await self._do_sync_time(market_type)
 
@@ -170,12 +163,6 @@ class BinanceClient:
         return offset
 
     async def _ensure_time_synced(self, market_type: MarketType) -> None:
-        """Garante time sync antes de request assinada.
-
-        Tenta `time_sync_attempts` vezes com backoff curto. Se todas falharem,
-        levanta ExchangeConnectionError — preferimos falhar explícito a enviar
-        uma request com timestamp errado.
-        """
         if self._time_synced[market_type]:
             return
 
@@ -253,16 +240,11 @@ class BinanceClient:
             if response.status_code == 200:
                 return response.json()
 
-            if response.status_code == 400 and self._is_timestamp_related_error(
-                response
-            ):
+            if response.status_code == 400 and self._is_signature_error(response):
+                self._log_signature_diagnostic(market_type, path, response)
                 logger.warning(
                     "binance.timestamp_resync",
-                    extra={
-                        "attempt": attempt,
-                        "path": path,
-                        "body": response.text[:200],
-                    },
+                    extra={"attempt": attempt, "path": path},
                 )
                 try:
                     await self._do_sync_time(market_type)
@@ -312,17 +294,40 @@ class BinanceClient:
         return min(2.0**attempt, 10.0)
 
     @staticmethod
-    def _is_timestamp_related_error(response: httpx.Response) -> bool:
-        """-1021: timestamp fora do recvWindow. -1022: assinatura inválida.
-
-        Ambos indicam drift de relógio (ou re-encoding no meio do caminho).
-        A correção é a mesma: re-sync + retry.
-        """
+    def _is_signature_error(response: httpx.Response) -> bool:
         try:
             code = response.json().get("code")
         except ValueError:
             return False
         return code in (-1021, -1022)
+
+    def _log_signature_diagnostic(
+        self,
+        market_type: MarketType,
+        path: str,
+        response: httpx.Response,
+    ) -> None:
+        key = self._api_key
+        secret = self._api_secret
+        logger.error(
+            "binance.signature_rejected_diagnostic",
+            extra={
+                "market": market_type.value,
+                "path": path,
+                "body": response.text[:200],
+                "api_key_len": len(key),
+                "api_key_has_whitespace": any(c.isspace() for c in key),
+                "api_key_has_quote": ('"' in key) or ("'" in key),
+                "secret_len": len(secret),
+                "secret_has_whitespace": any(c.isspace() for c in secret),
+                "secret_has_quote": ('"' in secret) or ("'" in secret),
+                "hint": (
+                    "Se secret_len != 64 ou *_has_whitespace/*_has_quote for "
+                    "True, limpe o .env. Se estiver OK, gere nova chave em "
+                    "https://demo.binance.com/en/my/settings/api-management"
+                ),
+            },
+        )
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:

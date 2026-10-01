@@ -12,7 +12,7 @@ from app.core.enums import (
     TimeInForce,
 )
 from app.domain.models.order import OrderRequest
-from app.exchanges.binance.client import SPOT_REST_TESTNET, BinanceClient
+from app.exchanges.binance.client import SPOT_REST_DEMO, BinanceClient
 from app.exchanges.binance.orders import BinanceOrderProvider
 
 FIXED_SERVER_TIME_MS = 1_700_000_000_000
@@ -58,7 +58,7 @@ def _mock_futures_time(mock) -> None:
 async def test_place_order_spot():
     provider, client = _provider()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             _mock_spot_time(mock)
             mock.post("/api/v3/order").mock(
                 return_value=Response(200, json=_order_json())
@@ -85,7 +85,7 @@ async def test_place_order_spot():
 async def test_cancel_order_spot():
     provider, client = _provider()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             _mock_spot_time(mock)
             mock.delete("/api/v3/order").mock(
                 return_value=Response(200, json=_order_json(status="CANCELED"))
@@ -100,7 +100,7 @@ async def test_cancel_order_spot():
 async def test_list_open_orders_spot():
     provider, client = _provider()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             _mock_spot_time(mock)
             mock.get("/api/v3/openOrders").mock(
                 return_value=Response(200, json=[_order_json()])
@@ -115,7 +115,7 @@ async def test_list_open_orders_spot():
 async def test_place_order_futures_reduce_only():
     provider, client = _provider()
     try:
-        with respx.mock(base_url="https://testnet.binancefuture.com") as mock:
+        with respx.mock(base_url="https://demo-fapi.binance.com") as mock:
             _mock_futures_time(mock)
             route = mock.post("/fapi/v1/order").mock(
                 return_value=Response(
