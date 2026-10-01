@@ -3,7 +3,7 @@ import respx
 from httpx import Response
 
 from app.core.enums import MarketType
-from app.exchanges.binance.client import SPOT_REST_TESTNET, BinanceClient
+from app.exchanges.binance.client import SPOT_REST_DEMO, BinanceClient
 from app.exchanges.binance.market_data import BinanceMarketDataProvider
 from app.exchanges.binance.ws import BinanceWebSocket
 
@@ -13,8 +13,8 @@ def _provider() -> tuple[BinanceMarketDataProvider, BinanceClient]:
     provider = BinanceMarketDataProvider(
         client,
         BinanceWebSocket(),
-        ws_spot_base="wss://testnet.binance.vision",
-        ws_futures_base="wss://stream.binancefuture.com",
+        ws_spot_base="wss://demo-stream.binance.com",
+        ws_futures_base="wss://demo-fstream.binance.com",
     )
     return provider, client
 
@@ -23,7 +23,7 @@ def _provider() -> tuple[BinanceMarketDataProvider, BinanceClient]:
 async def test_get_ticker_spot():
     provider, client = _provider()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             mock.get("/api/v3/ticker/24hr").mock(
                 return_value=Response(
                     200,
@@ -48,14 +48,24 @@ async def test_get_ticker_spot():
 async def test_get_candles_spot():
     provider, client = _provider()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             mock.get("/api/v3/klines").mock(
                 return_value=Response(
                     200,
                     json=[
                         [
-                            1_700_000_000_000, "1.0", "2.0", "0.5", "1.5", "100.0",
-                            1_700_000_059_999, "150.0", 42, "50.0", "75.0", "0",
+                            1_700_000_000_000,
+                            "1.0",
+                            "2.0",
+                            "0.5",
+                            "1.5",
+                            "100.0",
+                            1_700_000_059_999,
+                            "150.0",
+                            42,
+                            "50.0",
+                            "75.0",
+                            "0",
                         ]
                     ],
                 )
@@ -71,7 +81,7 @@ async def test_get_candles_spot():
 async def test_get_order_book_spot():
     provider, client = _provider()
     try:
-        with respx.mock(base_url=SPOT_REST_TESTNET) as mock:
+        with respx.mock(base_url=SPOT_REST_DEMO) as mock:
             mock.get("/api/v3/depth").mock(
                 return_value=Response(
                     200,

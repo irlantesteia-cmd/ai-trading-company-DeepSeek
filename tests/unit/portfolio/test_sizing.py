@@ -55,7 +55,6 @@ def test_sizes_by_risk_per_trade():
         max_notional_per_symbol=Decimal(1000000),
     )
     intent = sizer.size(_signal(), _decision(), _state("10000"))
-    # 1% de 10000 = 100 USDT de risco; stop distance = 1000; qty = 0.1
     assert intent.quantity == Decimal("0.10000000")
     assert intent.side is OrderSide.BUY
     assert intent.stop_price == Decimal(59000)
@@ -63,12 +62,11 @@ def test_sizes_by_risk_per_trade():
 
 def test_caps_by_max_notional():
     sizer = PositionSizer(
-        risk_per_trade_pct=0.50,  # risco enorme
+        risk_per_trade_pct=0.50,
         default_stop_pct=0.02,
-        max_notional_per_symbol=Decimal(1000),  # teto baixo
+        max_notional_per_symbol=Decimal(1000),
     )
     intent = sizer.size(_signal(), _decision(), _state("10000"))
-    # cap: 1000/60000 = 0.01666666...
     assert intent.quantity == Decimal("0.01666666")
 
 
@@ -86,12 +84,11 @@ def test_short_direction():
 def test_uses_default_stop_when_missing():
     sizer = PositionSizer(
         risk_per_trade_pct=0.01,
-        default_stop_pct=0.02,  # 2%
+        default_stop_pct=0.02,
         max_notional_per_symbol=Decimal(1000000),
     )
     signal = _signal(stop=None)
     intent = sizer.size(signal, _decision(), _state("10000"))
-    # 2% de 60000 = 1200 de distância; 100/1200 = 0.08333333
     assert intent.quantity == Decimal("0.08333333")
     assert intent.stop_price == Decimal("58800.00")
 
@@ -118,3 +115,15 @@ def test_rejects_stop_equal_entry():
             _decision(),
             _state(),
         )
+
+
+def test_rejects_zero_or_negative_equity():
+    sizer = PositionSizer(
+        risk_per_trade_pct=0.01,
+        default_stop_pct=0.02,
+        max_notional_per_symbol=Decimal(1000000),
+    )
+    with pytest.raises(ValueError, match="equity"):
+        sizer.size(_signal(), _decision(), _state("0"))
+    with pytest.raises(ValueError, match="equity"):
+        sizer.size(_signal(), _decision(), _state("-100"))
