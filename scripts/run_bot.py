@@ -38,6 +38,7 @@ from app.github.client import GitHubClient
 from app.github.policies import default_policy
 from app.github.workflows import GitHubWorkflows
 from app.market.backfill import HistoryBackfillService
+from app.market.candle_stream import CandleStreamService
 from app.ml.autotrain import autotrain_all
 from app.monitoring.db_ping import run_database_ping_loop
 from app.monitoring.health import HealthChecker
@@ -129,9 +130,7 @@ async def main() -> None:
 
     heartbeat = HeartbeatMonitor(max_age_seconds=settings.heartbeat_max_age_s)
 
-    ml_agent = MLAgent(
-        context, model_dir=MODEL_DIR, horizon=settings.ml_horizon
-    )
+    ml_agent = MLAgent(context, model_dir=MODEL_DIR, horizon=settings.ml_horizon)
 
     registry.register(TradingManager(context))
     registry.register(RiskAgent(context))
@@ -239,6 +238,20 @@ async def main() -> None:
             await asyncio.sleep(86400)
             await _run_once()
 
+    async def candle_stream_task() -> None:
+        streams = [
+            CandleStreamService(
+                exchange=exchange,
+                event_bus=event_bus,
+                symbol=symbol,
+                interval=settings.default_interval,
+                market_type=market_type,
+                poll_interval_s=settings.candle_stream_interval_s,
+            )
+            for symbol in settings.trading_symbols
+        ]
+        await asyncio.gather(*(s.run_forever() for s in streams))
+
     async def autotrain_task() -> None:
         await backfill_first_run_done.wait()
 
@@ -281,6 +294,19 @@ async def main() -> None:
         await loop.run_forever()
 
     tasks: list = [db_ping_task, heartbeat_task, health_task, backfill_task]
+
+    if settings.candle_stream_enabled:
+        tasks.append(candle_stream_task)
+        logger.info(
+            "candle_stream.enabled",
+            extra={
+                "symbols": list(settings.trading_symbols),
+                "interval": settings.default_interval,
+                "poll_interval_s": settings.candle_stream_interval_s,
+            },
+        )
+    else:
+        logger.info("candle_stream.disabled")
 
     if settings.ml_autotrain_on_boot:
         tasks.append(autotrain_task)

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     default_strategy: str = "momentum"
     strategy_per_symbol: dict[str, str] = {}
 
+    # Candle stream: polling de klines para publicar CandleClosed no event bus
+    candle_stream_enabled: bool = True
+    candle_stream_interval_s: float = 30.0
+
     # Risco
     risk_max_position_notional: float = 10_000.0
     risk_max_total_notional: float = 50_000.0
@@ -54,7 +58,7 @@ class Settings(BaseSettings):
 
     # ML
     ml_autotrain_on_boot: bool = True
-    ml_autotrain_symbols: list[str] = []   # vazio = usa trading_symbols
+    ml_autotrain_symbols: list[str] = []
     ml_autotrain_limit: int = 500
     ml_horizon: int = 5
 
