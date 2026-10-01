@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     sizing_risk_per_trade_pct: float = 0.01
     sizing_default_stop_pct: float = 0.02
 
+    # ML
+    ml_autotrain_on_boot: bool = True
+    ml_autotrain_symbols: list[str] = []   # vazio = usa trading_symbols
+    ml_autotrain_limit: int = 500
+
     # GitHub
     github_token: str = ""
     github_repo: str = ""
