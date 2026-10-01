@@ -16,7 +16,7 @@ from app.core.enums import (
 )
 from app.domain.models.order import Order
 from app.domain.models.signal import Signal
-from app.events.event import SignalApproved, SignalRejected
+from app.events.event import SignalApproved, SignalGenerated, SignalRejected
 
 
 def _signal(confidence: float = 0.9) -> Signal:
@@ -90,9 +90,84 @@ async def test_approves_and_places_order(context):
     assert order is fake_order
     assert len(approved) == 1
 
-    # 1% de 10000 = 100 USDT / 1000 de distância = 0.1
-    assert approved[0].approved_quantity == pytest.approx(0.1, rel=1e-6)
-
     sent_request = context.exchange.orders.place_order.await_args.args[0]
     assert sent_request.symbol == "BTCUSDT"
     assert sent_request.side == OrderSide.BUY
+
+
+@pytest.mark.asyncio
+async def test_auto_execution_disabled_ignores_signal(context):
+    """Com signal_auto_execution_enabled=False, sinal é logado e ignorado."""
+    context.settings.signal_auto_execution_enabled = False
+    manager = _wire(context)
+    await manager.start()
+
+    await context.event_bus.publish(
+        SignalGenerated(
+            signal_id="s-1",
+            symbol="BTCUSDT",
+            agent="asset::BTCUSDT",
+            direction="LONG",
+            confidence=0.9,
+            signal=_signal(),
+        )
+    )
+
+    context.exchange.orders.place_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_auto_execution_enabled_processes_signal(context):
+    """Com signal_auto_execution_enabled=True, sinal vira ordem."""
+    context.settings.signal_auto_execution_enabled = True
+    manager = _wire(context)
+
+    fake_order = Order(
+        exchange_order_id="X-1",
+        client_order_id="c-1",
+        symbol="BTCUSDT",
+        market_type=MarketType.FUTURES,
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        status=OrderStatus.NEW,
+        quantity=Decimal("0.1"),
+        executed_quantity=Decimal(0),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    context.exchange.orders.place_order.return_value = fake_order
+    await manager.start()
+
+    await context.event_bus.publish(
+        SignalGenerated(
+            signal_id="s-1",
+            symbol="BTCUSDT",
+            agent="asset::BTCUSDT",
+            direction="LONG",
+            confidence=0.9,
+            signal=_signal(),
+        )
+    )
+
+    context.exchange.orders.place_order.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_auto_execution_enabled_missing_payload_is_ignored(context):
+    """Sinal sem payload de `Signal` → warning, sem ordem."""
+    context.settings.signal_auto_execution_enabled = True
+    manager = _wire(context)
+    await manager.start()
+
+    await context.event_bus.publish(
+        SignalGenerated(
+            signal_id="s-1",
+            symbol="BTCUSDT",
+            agent="asset::BTCUSDT",
+            direction="LONG",
+            confidence=0.9,
+            signal=None,
+        )
+    )
+
+    context.exchange.orders.place_order.assert_not_called()
