@@ -28,7 +28,7 @@ from app.agents import (
 )
 from app.core.config import settings
 from app.core.enums import MarketType
-from app.core.exceptions import ExchangeAuthError
+from app.core.exceptions import ConfigurationError, ExchangeAuthError
 from app.core.logging import setup_logging
 from app.database.session import AsyncSessionLocal, check_connection
 from app.events.bus import EventBus
@@ -49,22 +49,53 @@ from app.runtime.heartbeat import HeartbeatMonitor
 from app.runtime.lifecycle import ApplicationLifecycle
 from app.runtime.metrics_collector import MetricsCollector
 from app.runtime.recovery import Reconciler
+from app.strategies import Strategy, make_strategy
 
 logger = logging.getLogger(__name__)
+
+MODEL_DIR = Path("models")
+
+
+def _resolve_strategies() -> dict[str, Strategy | None]:
+    """Resolve a estratégia de cada símbolo. Falha rápido se spec inválida."""
+    resolved: dict[str, Strategy | None] = {}
+    for symbol in settings.trading_symbols:
+        spec = settings.strategy_per_symbol.get(symbol, settings.default_strategy)
+        try:
+            resolved[symbol] = make_strategy(
+                spec, symbol=symbol, model_dir=MODEL_DIR, horizon=settings.ml_horizon
+            )
+        except ConfigurationError as exc:
+            logger.error(
+                "boot.invalid_strategy_spec",
+                extra={"symbol": symbol, "spec": spec, "error": str(exc)},
+            )
+            raise SystemExit(1) from None
+    return resolved
 
 
 async def main() -> None:
     setup_logging(settings.log_level)
     logger.info("boot.start", extra={"env": settings.app_env})
 
-    # Falha rápido se o Postgres estiver inacessível. Sem isso, 14 agentes
-    # sobem para descobrir no primeiro SELECT que o DB está down.
     try:
         await check_connection()
         logger.info("boot.db_ok")
     except Exception:
         logger.exception("boot.db_unreachable")
         raise SystemExit(1) from None
+
+    strategies = _resolve_strategies()
+    logger.info(
+        "boot.strategies_resolved",
+        extra={
+            "symbols": settings.trading_symbols,
+            "per_symbol": {
+                s: settings.strategy_per_symbol.get(s, settings.default_strategy)
+                for s in settings.trading_symbols
+            },
+        },
+    )
 
     exchange = BinanceAdapter(
         api_key=settings.binance_api_key,
@@ -98,7 +129,9 @@ async def main() -> None:
 
     heartbeat = HeartbeatMonitor(max_age_seconds=settings.heartbeat_max_age_s)
 
-    ml_agent = MLAgent(context, model_dir=Path("models"))
+    ml_agent = MLAgent(
+        context, model_dir=MODEL_DIR, horizon=settings.ml_horizon
+    )
 
     registry.register(TradingManager(context))
     registry.register(RiskAgent(context))
@@ -121,6 +154,7 @@ async def main() -> None:
                 symbol=symbol,
                 market_type=market_type,
                 interval=settings.default_interval,
+                strategy=strategies.get(symbol),
             )
         )
 
@@ -134,9 +168,6 @@ async def main() -> None:
         session_factory=AsyncSessionLocal,
     )
 
-    # Sinaliza que o backfill inicial terminou (sucesso ou falha).
-    # O autotrain só começa depois disso; se o backfill falhar, o autotrain
-    # ainda roda e reporta "candles insuficientes" por símbolo.
     backfill_first_run_done = asyncio.Event()
 
     async def db_ping_task() -> None:
@@ -190,8 +221,6 @@ async def main() -> None:
             await asyncio.sleep(settings.reconcile_interval_s)
 
     async def backfill_task() -> None:
-        """Backfill inicial + re-backfill diário."""
-
         async def _run_once() -> None:
             try:
                 await backfill.backfill(
@@ -207,11 +236,10 @@ async def main() -> None:
         backfill_first_run_done.set()
 
         while True:
-            await asyncio.sleep(86400)  # 24h
+            await asyncio.sleep(86400)
             await _run_once()
 
     async def autotrain_task() -> None:
-        """Treina os modelos no boot, depois do backfill inicial."""
         await backfill_first_run_done.wait()
 
         symbols = settings.ml_autotrain_symbols or list(settings.trading_symbols)
