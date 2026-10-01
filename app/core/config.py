@@ -37,9 +37,13 @@ class Settings(BaseSettings):
     default_strategy: str = "momentum"
     strategy_per_symbol: dict[str, str] = {}
 
-    # Candle stream: polling de klines para publicar CandleClosed no event bus
+    # Candle stream
     candle_stream_enabled: bool = True
     candle_stream_interval_s: float = 30.0
+
+    # Auto-execução de sinais. FALSE por padrão — sinais são logados mas
+    # não viram ordens. Ative conscientemente depois de validar as estratégias.
+    signal_auto_execution_enabled: bool = False
 
     # Risco
     risk_max_position_notional: float = 10_000.0

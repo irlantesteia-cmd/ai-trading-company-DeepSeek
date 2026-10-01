@@ -4,6 +4,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.models.order import Order
+from app.domain.models.signal import Signal
 
 
 class Event(BaseModel):
@@ -47,9 +48,7 @@ class OrderFilled(Event):
     """Ordem preenchida (total ou parcialmente).
 
     Carrega o `Order` completo — com a lista de `fills` — para permitir que
-    ouvintes persistam cada fill como um `TradeORM`. Eventos antigos que
-    omitem `order` continuam válidos (`order=None`); o `TradeRecorderAgent`
-    ignora esses casos com log de debug.
+    ouvintes persistam cada fill como um `TradeORM`.
     """
 
     exchange_order_id: str
@@ -66,11 +65,19 @@ class OrderRejected(Event):
 
 # --- Eventos de Sinal / Decisão --------------------------------------------
 class SignalGenerated(Event):
+    """Sinal gerado por um `AssetAgent` (via estratégia).
+
+    `signal` é opcional para backward compatibility — payloads antigos
+    continuam válidos. Quando presente, o `TradingManager` pode processá-lo
+    (auto-execução, sujeita a `signal_auto_execution_enabled`).
+    """
+
     signal_id: str
     symbol: str
     agent: str
     direction: str
     confidence: float
+    signal: Signal | None = None
 
 
 class SignalApproved(Event):

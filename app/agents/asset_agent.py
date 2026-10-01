@@ -25,6 +25,9 @@ class AssetAgent(BaseAgent):
 
     Se receber uma `strategy`, `analyze()` busca candles via `_fetch_candles()`
     e delega a geração do sinal à estratégia. Caso contrário, retorna None.
+
+    `tick()` publica `SignalGenerated` — com o `Signal` completo no payload,
+    permitindo que o `TradingManager` (opcionalmente) processe-o como ordem.
     """
 
     role = AgentRole.ASSET
@@ -92,6 +95,7 @@ class AssetAgent(BaseAgent):
                 agent=signal.agent,
                 direction=signal.direction.value,
                 confidence=signal.confidence,
+                signal=signal,
             )
         )
         return signal
