@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     default_interval: str = "5m"
     default_market_type: str = "FUTURES"
 
+    # Estratégia por símbolo. Chaves em maiúsculas (BTCUSDT etc.).
+    # Valores aceitos: "momentum", "mean_reversion", "ml", "none".
+    default_strategy: str = "momentum"
+    strategy_per_symbol: dict[str, str] = {}
+
     # Risco
     risk_max_position_notional: float = 10_000.0
     risk_max_total_notional: float = 50_000.0
@@ -51,6 +56,7 @@ class Settings(BaseSettings):
     ml_autotrain_on_boot: bool = True
     ml_autotrain_symbols: list[str] = []   # vazio = usa trading_symbols
     ml_autotrain_limit: int = 500
+    ml_horizon: int = 5
 
     # GitHub
     github_token: str = ""
