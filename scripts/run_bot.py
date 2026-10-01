@@ -30,7 +30,7 @@ from app.core.config import settings
 from app.core.enums import MarketType
 from app.core.exceptions import ExchangeAuthError
 from app.core.logging import setup_logging
-from app.database.session import AsyncSessionLocal
+from app.database.session import AsyncSessionLocal, check_connection
 from app.events.bus import EventBus
 from app.events.event import HealthCheckFailed
 from app.exchanges.binance.adapter import BinanceAdapter
@@ -39,6 +39,7 @@ from app.github.policies import default_policy
 from app.github.workflows import GitHubWorkflows
 from app.market.backfill import HistoryBackfillService
 from app.ml.autotrain import autotrain_all
+from app.monitoring.db_ping import run_database_ping_loop
 from app.monitoring.health import HealthChecker
 from app.orchestration.context import AgentContext
 from app.orchestration.orchestrator import Orchestrator
@@ -55,6 +56,15 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     setup_logging(settings.log_level)
     logger.info("boot.start", extra={"env": settings.app_env})
+
+    # Falha rápido se o Postgres estiver inacessível. Sem isso, 14 agentes
+    # sobem para descobrir no primeiro SELECT que o DB está down.
+    try:
+        await check_connection()
+        logger.info("boot.db_ok")
+    except Exception:
+        logger.exception("boot.db_unreachable")
+        raise SystemExit(1) from None
 
     exchange = BinanceAdapter(
         api_key=settings.binance_api_key,
@@ -128,6 +138,12 @@ async def main() -> None:
     # O autotrain só começa depois disso; se o backfill falhar, o autotrain
     # ainda roda e reporta "candles insuficientes" por símbolo.
     backfill_first_run_done = asyncio.Event()
+
+    async def db_ping_task() -> None:
+        await run_database_ping_loop(
+            event_bus=event_bus,
+            interval_seconds=settings.db_ping_interval_s,
+        )
 
     async def heartbeat_task() -> None:
         while True:
@@ -236,7 +252,7 @@ async def main() -> None:
         )
         await loop.run_forever()
 
-    tasks: list = [heartbeat_task, health_task, backfill_task]
+    tasks: list = [db_ping_task, heartbeat_task, health_task, backfill_task]
 
     if settings.ml_autotrain_on_boot:
         tasks.append(autotrain_task)
