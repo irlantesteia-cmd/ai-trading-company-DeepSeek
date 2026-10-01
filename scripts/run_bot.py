@@ -38,6 +38,7 @@ from app.github.client import GitHubClient
 from app.github.policies import default_policy
 from app.github.workflows import GitHubWorkflows
 from app.market.backfill import HistoryBackfillService
+from app.ml.autotrain import autotrain_all
 from app.monitoring.health import HealthChecker
 from app.orchestration.context import AgentContext
 from app.orchestration.orchestrator import Orchestrator
@@ -87,6 +88,8 @@ async def main() -> None:
 
     heartbeat = HeartbeatMonitor(max_age_seconds=settings.heartbeat_max_age_s)
 
+    ml_agent = MLAgent(context, model_dir=Path("models"))
+
     registry.register(TradingManager(context))
     registry.register(RiskAgent(context))
     registry.register(PortfolioAgent(context))
@@ -98,7 +101,7 @@ async def main() -> None:
         EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows)
     )
     registry.register(ResearchAgent(context, workflows=workflows))
-    registry.register(MLAgent(context, model_dir=Path("models")))
+    registry.register(ml_agent)
 
     market_type = MarketType(settings.default_market_type)
     for symbol in settings.trading_symbols:
@@ -120,6 +123,11 @@ async def main() -> None:
         exchange=exchange,
         session_factory=AsyncSessionLocal,
     )
+
+    # Sinaliza que o backfill inicial terminou (sucesso ou falha).
+    # O autotrain só começa depois disso; se o backfill falhar, o autotrain
+    # ainda roda e reporta "candles insuficientes" por símbolo.
+    backfill_first_run_done = asyncio.Event()
 
     async def heartbeat_task() -> None:
         while True:
@@ -180,9 +188,35 @@ async def main() -> None:
                 logger.exception("backfill.failed")
 
         await _run_once()
+        backfill_first_run_done.set()
+
         while True:
             await asyncio.sleep(86400)  # 24h
             await _run_once()
+
+    async def autotrain_task() -> None:
+        """Treina os modelos no boot, depois do backfill inicial."""
+        await backfill_first_run_done.wait()
+
+        symbols = settings.ml_autotrain_symbols or list(settings.trading_symbols)
+        if not symbols:
+            logger.info("ml.autotrain_no_symbols")
+            return
+
+        logger.info(
+            "ml.autotrain_starting",
+            extra={"symbols": symbols, "limit": settings.ml_autotrain_limit},
+        )
+        try:
+            await autotrain_all(
+                ml_agent=ml_agent,
+                symbols=symbols,
+                market_type=market_type,
+                interval=settings.default_interval,
+                limit=settings.ml_autotrain_limit,
+            )
+        except Exception:
+            logger.exception("ml.autotrain_failed")
 
     async def evolution_task() -> None:
         collector = MetricsCollector(
@@ -203,6 +237,20 @@ async def main() -> None:
         await loop.run_forever()
 
     tasks: list = [heartbeat_task, health_task, backfill_task]
+
+    if settings.ml_autotrain_on_boot:
+        tasks.append(autotrain_task)
+        logger.info(
+            "ml.autotrain_enabled",
+            extra={
+                "symbols": settings.ml_autotrain_symbols
+                or list(settings.trading_symbols),
+                "limit": settings.ml_autotrain_limit,
+            },
+        )
+    else:
+        logger.info("ml.autotrain_disabled")
+
     if settings.binance_api_key and settings.binance_api_secret:
         tasks.append(reconcile_task)
     else:
