@@ -1,7 +1,10 @@
 """Coletor de métricas operacionais para o EvolutionLoop.
 
-Lê trades do DB dentro de uma janela de lookback e calcula as métricas
-que o `EvolutionLoop` usa para decidir se vale propor uma mudança.
+Lê `round_trips` fechados dentro de uma janela de lookback e calcula as
+métricas que o `EvolutionLoop` usa para decidir se vale propor uma mudança.
+
+Fills crus ficam em `trades`; ciclos completos (entrada + saída) ficam em
+`round_trips`. Só os ciclos fechados têm P&L realizado — daí a fonte.
 """
 
 from __future__ import annotations
@@ -14,7 +17,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.database.models.trade import TradeORM
+from app.core.enums import RoundTripStatus
+from app.database.models.round_trip import RoundTripORM
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +32,13 @@ class TradingMetrics:
     total_fees: Decimal
     win_count: int
     loss_count: int
-    win_rate: float | None  # None se nenhum trade com realized_pnl
+    win_rate: float | None
     avg_win: Decimal
     avg_loss: Decimal
     lookback_hours: int
     computed_at: datetime
 
     def as_dict(self) -> dict[str, float]:
-        """Formato aceito pelo `ChangeGenerator` do EvolutionLoop."""
         return {
             "num_trades": float(self.num_trades),
             "total_pnl": float(self.total_pnl),
@@ -47,11 +50,11 @@ class TradingMetrics:
 
 
 class MetricsCollector:
-    """Coleta trades do DB e calcula métricas operacionais.
+    """Coleta round trips fechados e calcula métricas operacionais.
 
     Nunca levanta exceção por dados ausentes — DB vazio retorna métricas
-    zeradas com `win_rate=None`. Exceções do DB (ex.: tabela inexistente)
-    propagam e são tratadas pelo caller (o `EvolutionLoop` já captura).
+    zeradas com `win_rate=None`. Exceções do DB propagam e são tratadas
+    pelo caller (o `EvolutionLoop` já captura).
     """
 
     def __init__(
@@ -73,7 +76,11 @@ class MetricsCollector:
         now = now or datetime.now(UTC)
         since = now - timedelta(hours=self._lookback_hours)
 
-        stmt = select(TradeORM).where(TradeORM.executed_at >= since)
+        stmt = select(RoundTripORM).where(
+            RoundTripORM.status == RoundTripStatus.CLOSED.value,
+            RoundTripORM.closed_at.is_not(None),
+            RoundTripORM.closed_at >= since,
+        )
         async with self._session_factory() as session:
             rows = (await session.execute(stmt)).scalars().all()
 
@@ -83,8 +90,8 @@ class MetricsCollector:
         losses: list[Decimal] = []
 
         for row in rows:
-            total_fees += row.fee or Decimal(0)
-            pnl = row.realized_pnl
+            total_fees += (row.entry_fee or Decimal(0)) + (row.exit_fee or Decimal(0))
+            pnl = row.net_pnl
             if pnl is None:
                 continue
             total_pnl += pnl

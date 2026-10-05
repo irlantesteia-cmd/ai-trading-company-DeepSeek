@@ -16,6 +16,7 @@ from app.exchanges.binance.client import SPOT_REST_DEMO, BinanceClient
 from app.exchanges.binance.orders import BinanceOrderProvider
 
 FIXED_SERVER_TIME_MS = 1_700_000_000_000
+FUTURES_BASE_URL = "https://demo-fapi.binance.com"
 
 
 def _provider() -> tuple[BinanceOrderProvider, BinanceClient]:
@@ -112,10 +113,11 @@ async def test_list_open_orders_spot():
 
 
 @pytest.mark.asyncio
-async def test_place_order_futures_reduce_only():
+async def test_place_order_futures_hedge_mode_uses_position_side():
+    """Hedge mode: envia positionSide, OMITE reduceOnly (correto após -1106)."""
     provider, client = _provider()
     try:
-        with respx.mock(base_url="https://demo-fapi.binance.com") as mock:
+        with respx.mock(base_url=FUTURES_BASE_URL) as mock:
             _mock_futures_time(mock)
             route = mock.post("/fapi/v1/order").mock(
                 return_value=Response(
@@ -123,7 +125,6 @@ async def test_place_order_futures_reduce_only():
                     json=_order_json(
                         type="MARKET",
                         side="SELL",
-                        reduceOnly=True,
                         positionSide="LONG",
                     ),
                 )
@@ -136,12 +137,49 @@ async def test_place_order_futures_reduce_only():
                     side=OrderSide.SELL,
                     type=OrderType.MARKET,
                     quantity=Decimal("0.5"),
-                    reduce_only=True,
+                    reduce_only=True,  # ignorado em hedge mode
                     position_side=PositionSide.LONG,
                 )
             )
-            assert order.reduce_only is True
-            sent = route.calls[0].request
-            assert "reduceOnly=true" in str(sent.url)
+            assert order.symbol == "BTCUSDT"
+            sent_url = str(route.calls[0].request.url)
+            assert "positionSide=LONG" in sent_url
+            assert "reduceOnly" not in sent_url
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_place_order_futures_one_way_uses_reduce_only():
+    """One-way mode: envia reduceOnly=true, OMITE positionSide."""
+    provider, client = _provider()
+    try:
+        with respx.mock(base_url=FUTURES_BASE_URL) as mock:
+            _mock_futures_time(mock)
+            route = mock.post("/fapi/v1/order").mock(
+                return_value=Response(
+                    200,
+                    json=_order_json(
+                        type="MARKET",
+                        side="SELL",
+                        reduceOnly=True,
+                    ),
+                )
+            )
+            await provider.place_order(
+                OrderRequest(
+                    client_order_id="c-3",
+                    symbol="BTCUSDT",
+                    market_type=MarketType.FUTURES,
+                    side=OrderSide.SELL,
+                    type=OrderType.MARKET,
+                    quantity=Decimal("0.5"),
+                    reduce_only=True,
+                    position_side=None,
+                )
+            )
+            sent_url = str(route.calls[0].request.url)
+            assert "reduceOnly=true" in sent_url
+            assert "positionSide" not in sent_url
     finally:
         await client.close()

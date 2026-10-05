@@ -81,3 +81,21 @@ class RiskAction(StrEnum):
     APPROVE = "APPROVE"
     RESIZE = "RESIZE"
     REJECT = "REJECT"
+
+
+class RoundTripStatus(StrEnum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class CloseReason(StrEnum):
+    STOP_LOSS = "STOP_LOSS"
+    TAKE_PROFIT = "TAKE_PROFIT"
+    MANUAL = "MANUAL"
+    UNKNOWN = "UNKNOWN"
+
+
+class TradeRole(StrEnum):
+    ENTRY = "ENTRY"
+    EXIT = "EXIT"
+    UNKNOWN = "UNKNOWN"

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     db_ping_interval_s: float = 60.0
 
-    # Binance
+    # Binance (demo.binance.com)
     binance_api_key: str = ""
     binance_api_secret: str = ""
     binance_testnet: bool = True
@@ -22,18 +22,22 @@ class Settings(BaseSettings):
     binance_timeout_s: float = 15.0
     binance_max_retries: int = 3
     binance_time_sync_attempts: int = 2
+    binance_max_rtt_ms_for_sync: float = 3000.0
     binance_ws_ping_interval_s: float = 20.0
     binance_ws_ping_timeout_s: float = 20.0
     binance_ws_reconnect_initial_s: float = 1.0
     binance_ws_reconnect_max_s: float = 30.0
+
+    # Order fill polling
+    order_fill_poll_attempts: int = 5
+    order_fill_poll_interval_s: float = 0.5
 
     # Trading
     trading_symbols: list[str] = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"]
     default_interval: str = "5m"
     default_market_type: str = "FUTURES"
 
-    # Estratégia por símbolo. Chaves em maiúsculas (BTCUSDT etc.).
-    # Valores aceitos: "momentum", "mean_reversion", "ml", "none".
+    # Estratégia
     default_strategy: str = "momentum"
     strategy_per_symbol: dict[str, str] = {}
 
@@ -41,9 +45,33 @@ class Settings(BaseSettings):
     candle_stream_enabled: bool = True
     candle_stream_interval_s: float = 30.0
 
-    # Auto-execução de sinais. FALSE por padrão — sinais são logados mas
-    # não viram ordens. Ative conscientemente depois de validar as estratégias.
+    # Auto-execução (default OFF)
     signal_auto_execution_enabled: bool = False
+
+    # Boot cleanup (dev/test)
+    close_positions_on_boot: bool = False
+
+    # Ao fechar posição, cancelar SL/TP pendentes antes (evita órfãs).
+    cancel_protective_orders_on_close: bool = True
+
+    # Quando um SL/TP dispara, cancelar o(s) irmão(s) pendente(s) do mesmo
+    # símbolo. Sem isso, o irmão fica órfão até o próximo close/reconcile.
+    cancel_sibling_on_protective_fill: bool = True
+
+    # Ordens protetivas (STOP_MARKET / TAKE_PROFIT_MARKET após fill)
+    stop_loss_enabled: bool = False
+    take_profit_enabled: bool = False
+
+    # User Data Stream
+    user_stream_enabled: bool = True
+    user_stream_keepalive_interval_s: float = 1800.0
+    user_stream_reconnect_initial_s: float = 1.0
+    user_stream_reconnect_max_s: float = 30.0
+    user_stream_ping_interval_s: float = 20.0
+
+    # ML thresholds
+    ml_long_threshold: float = 0.60
+    ml_short_threshold: float = 0.40
 
     # Risco
     risk_max_position_notional: float = 10_000.0
@@ -52,9 +80,7 @@ class Settings(BaseSettings):
     risk_max_daily_loss: float = 1_000.0
     risk_max_open_positions: int = 5
     risk_min_confidence: float = 0.5
-    risk_correlated_groups: dict[str, list[str]] = {
-        "crypto_majors": ["BTCUSDT", "ETHUSDT"],
-    }
+    risk_correlated_groups: dict[str, list[str]] = {"crypto_majors": ["BTCUSDT", "ETHUSDT"]}
 
     # Sizing
     sizing_risk_per_trade_pct: float = 0.01

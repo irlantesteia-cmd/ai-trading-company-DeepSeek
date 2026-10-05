@@ -1,3 +1,10 @@
+"""Testes do `MetricsCollector`.
+
+O coletor lê `round_trips` fechados (entrada + saída) e calcula métricas
+de trading sobre `net_pnl`. Fills crus ficam em `trades` e não entram
+aqui — só ciclos fechados têm P&L realizado.
+"""
+
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -7,9 +14,22 @@ from app.runtime.metrics_collector import MetricsCollector
 
 
 class _Row:
-    def __init__(self, *, fee: str = "0", realized_pnl: str | None = None) -> None:
-        self.fee = Decimal(fee)
-        self.realized_pnl = Decimal(realized_pnl) if realized_pnl is not None else None
+    """Linha fake de `RoundTripORM` com os campos que o coletor usa."""
+
+    def __init__(
+        self,
+        *,
+        entry_fee: str = "0",
+        exit_fee: str = "0",
+        net_pnl: str | None = None,
+        status: str = "CLOSED",
+        closed_at: datetime | None = None,
+    ) -> None:
+        self.entry_fee = Decimal(entry_fee)
+        self.exit_fee = Decimal(exit_fee)
+        self.net_pnl = Decimal(net_pnl) if net_pnl is not None else None
+        self.status = status
+        self.closed_at = closed_at or datetime.now(UTC)
 
 
 class _FakeResult:
@@ -63,12 +83,12 @@ async def test_empty_db_yields_zeroed_metrics():
 
 
 @pytest.mark.asyncio
-async def test_mixed_trades_compute_win_rate_and_averages():
+async def test_mixed_round_trips_compute_win_rate_and_averages():
     rows = [
-        _Row(fee="0.5", realized_pnl="10"),
-        _Row(fee="0.5", realized_pnl="20"),
-        _Row(fee="0.5", realized_pnl="30"),
-        _Row(fee="0.5", realized_pnl="-15"),
+        _Row(entry_fee="0.25", exit_fee="0.25", net_pnl="10"),
+        _Row(entry_fee="0.25", exit_fee="0.25", net_pnl="20"),
+        _Row(entry_fee="0.25", exit_fee="0.25", net_pnl="30"),
+        _Row(entry_fee="0.25", exit_fee="0.25", net_pnl="-15"),
     ]
     collector = MetricsCollector(session_factory=_factory(rows), lookback_hours=24)
     m = await collector.collect()
@@ -77,18 +97,19 @@ async def test_mixed_trades_compute_win_rate_and_averages():
     assert m.loss_count == 1
     assert m.win_rate == pytest.approx(0.75)
     assert m.total_pnl == Decimal(45)
+    # 4 * (0.25 + 0.25) = 2.0
     assert m.total_fees == Decimal("2.0")
     assert m.avg_win == Decimal(20)
     assert m.avg_loss == Decimal(-15)
 
 
 @pytest.mark.asyncio
-async def test_trades_with_null_pnl_are_counted_but_not_decided():
-    """SPOT trades têm realized_pnl=None — contam no total, não no win_rate."""
+async def test_round_trips_with_null_pnl_counted_but_not_decided():
+    """`net_pnl=None` (edge case) conta no total, não no win_rate."""
     rows = [
-        _Row(fee="0.1", realized_pnl=None),
-        _Row(fee="0.1", realized_pnl=None),
-        _Row(fee="0.1", realized_pnl="5"),
+        _Row(entry_fee="0.1", exit_fee="0.1", net_pnl=None),
+        _Row(entry_fee="0.1", exit_fee="0.1", net_pnl=None),
+        _Row(entry_fee="0.1", exit_fee="0.1", net_pnl="5"),
     ]
     collector = MetricsCollector(session_factory=_factory(rows), lookback_hours=24)
     m = await collector.collect()
@@ -97,17 +118,20 @@ async def test_trades_with_null_pnl_are_counted_but_not_decided():
     assert m.loss_count == 0
     assert m.win_rate == pytest.approx(1.0)
     assert m.total_pnl == Decimal(5)
+    # 3 * (0.1 + 0.1) = 0.6
+    assert m.total_fees == Decimal("0.6")
 
 
 @pytest.mark.asyncio
 async def test_as_dict_returns_floats():
-    rows = [_Row(fee="1", realized_pnl="10")]
+    rows = [_Row(entry_fee="0.5", exit_fee="0.5", net_pnl="10")]
     collector = MetricsCollector(session_factory=_factory(rows), lookback_hours=24)
     m = await collector.collect()
     d = m.as_dict()
     assert isinstance(d["num_trades"], float)
     assert isinstance(d["total_pnl"], float)
     assert isinstance(d["win_rate"], float)
+    assert d["total_fees"] == pytest.approx(1.0)
 
 
 @pytest.mark.asyncio

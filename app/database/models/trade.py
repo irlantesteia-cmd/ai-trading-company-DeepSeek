@@ -23,3 +23,11 @@ class TradeORM(Base, TimestampMixin):
     fee_asset: Mapped[str] = mapped_column(String(16))
     realized_pnl: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    # Ligação ao ciclo (entrada + saída). Linhas antigas ficam NULL.
+    round_trip_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    role: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="UNKNOWN"
+    )

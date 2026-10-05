@@ -6,8 +6,7 @@ Specs suportadas:
     "ml"              → MLStrategy(symbol=..., model_dir=..., horizon=...)
     "none"            → None (AssetAgent fica inerte para o símbolo)
 
-Qualquer outra spec levanta `ConfigurationError` — falha rápida em config
-errada evita silêncio confuso em produção.
+Qualquer outra spec levanta `ConfigurationError`.
 """
 
 from __future__ import annotations
@@ -29,12 +28,10 @@ def make_strategy(
     symbol: str,
     model_dir: Path,
     horizon: int = 5,
+    ml_long_threshold: float = 0.6,
+    ml_short_threshold: float = 0.4,
 ) -> Strategy | None:
-    """Resolve uma spec textual para uma instância de `Strategy` (ou None).
-
-    Case-insensitive, com trim. Specs desconhecidas levantam
-    `ConfigurationError` listando as válidas.
-    """
+    """Resolve uma spec textual para uma instância de `Strategy` (ou None)."""
     normalized = spec.strip().lower()
 
     if normalized == "none":
@@ -44,7 +41,13 @@ def make_strategy(
     if normalized == "mean_reversion":
         return MeanReversionStrategy()
     if normalized == "ml":
-        return MLStrategy(symbol=symbol, model_dir=model_dir, horizon=horizon)
+        return MLStrategy(
+            symbol=symbol,
+            model_dir=model_dir,
+            horizon=horizon,
+            long_threshold=ml_long_threshold,
+            short_threshold=ml_short_threshold,
+        )
 
     raise ConfigurationError(
         f"strategy spec inválida: {spec!r}. "

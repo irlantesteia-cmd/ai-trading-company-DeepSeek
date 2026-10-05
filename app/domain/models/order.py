@@ -29,6 +29,7 @@ class OrderRequest(DomainModel):
     reduce_only: bool = False
     position_side: PositionSide | None = None  # apenas FUTURES
     leverage: int | None = None  # apenas FUTURES
+    close_position: bool = False  # FUTURES: usa closePosition=true em STOP_MARKET/TP_MARKET
 
 
 class OrderFill(DomainModel):
@@ -37,6 +38,7 @@ class OrderFill(DomainModel):
     commission: Decimal
     commission_asset: str
     timestamp: datetime
+    trade_id: str | None = None  # ID de trade da exchange (dedup UDS vs polling)
 
 
 class Order(DomainModel):

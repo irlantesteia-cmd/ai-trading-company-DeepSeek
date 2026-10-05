@@ -1,17 +1,11 @@
-"""Entry point: sobe a AI Trading Company e roda até receber sinal de parada.
-
-Uso:
-    python scripts/run_bot.py
-
-Requer .env com BINANCE_API_KEY / BINANCE_API_SECRET (ou TESTNET=true).
-Opcionalmente GITHUB_TOKEN + GITHUB_REPO para habilitar auto-evolução.
-"""
+"""Entry point: sobe a AI Trading Company e roda até receber sinal de parada."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 from app.agents import (
     AssetAgent,
@@ -23,6 +17,7 @@ from app.agents import (
     QAAgent,
     ResearchAgent,
     RiskAgent,
+    RoundTripAgent,
     TradeRecorderAgent,
     TradingManager,
 )
@@ -32,8 +27,12 @@ from app.core.exceptions import ConfigurationError, ExchangeAuthError
 from app.core.logging import setup_logging
 from app.database.session import AsyncSessionLocal, check_connection
 from app.events.bus import EventBus
-from app.events.event import HealthCheckFailed
+from app.events.event import HealthCheckFailed, OrderFilled
 from app.exchanges.binance.adapter import BinanceAdapter
+from app.exchanges.binance.client import BinanceClient
+from app.exchanges.binance.mappers import map_order_trade_update
+from app.exchanges.binance.user_stream import UserDataStreamClient
+from app.exchanges.symbol_info import SymbolInfoService
 from app.github.client import GitHubClient
 from app.github.policies import default_policy
 from app.github.workflows import GitHubWorkflows
@@ -45,6 +44,7 @@ from app.monitoring.health import HealthChecker
 from app.orchestration.context import AgentContext
 from app.orchestration.orchestrator import Orchestrator
 from app.orchestration.registry import AgentRegistry
+from app.runtime.boot_cleanup import close_all_futures_positions_on_boot
 from app.runtime.evolution import EvolutionLoop, NullChangeGenerator
 from app.runtime.heartbeat import HeartbeatMonitor
 from app.runtime.lifecycle import ApplicationLifecycle
@@ -53,26 +53,41 @@ from app.runtime.recovery import Reconciler
 from app.strategies import Strategy, make_strategy
 
 logger = logging.getLogger(__name__)
-
 MODEL_DIR = Path("models")
 
 
 def _resolve_strategies() -> dict[str, Strategy | None]:
-    """Resolve a estratégia de cada símbolo. Falha rápido se spec inválida."""
     resolved: dict[str, Strategy | None] = {}
     for symbol in settings.trading_symbols:
         spec = settings.strategy_per_symbol.get(symbol, settings.default_strategy)
         try:
             resolved[symbol] = make_strategy(
-                spec, symbol=symbol, model_dir=MODEL_DIR, horizon=settings.ml_horizon
+                spec, symbol=symbol, model_dir=MODEL_DIR,
+                horizon=settings.ml_horizon,
+                ml_long_threshold=settings.ml_long_threshold,
+                ml_short_threshold=settings.ml_short_threshold,
             )
         except ConfigurationError as exc:
-            logger.error(
-                "boot.invalid_strategy_spec",
-                extra={"symbol": symbol, "spec": spec, "error": str(exc)},
-            )
+            logger.error("boot.invalid_strategy_spec", extra={
+                "symbol": symbol, "spec": spec, "error": str(exc),
+            })
             raise SystemExit(1) from None
     return resolved
+
+
+def _extract_binance_client(exchange: BinanceAdapter) -> BinanceClient:
+    """Extrai o `BinanceClient` subjacente do `BinanceAdapter`.
+
+    O adapter pode expor como `client` (público) ou `_client` (privado).
+    """
+    for attr in ("client", "_client"):
+        obj = getattr(exchange, attr, None)
+        if isinstance(obj, BinanceClient):
+            return obj
+    raise RuntimeError(
+        "BinanceAdapter não expõe o BinanceClient subjacente. "
+        "Adicione uma propriedade `client` em app/exchanges/binance/adapter.py."
+    )
 
 
 async def main() -> None:
@@ -87,93 +102,77 @@ async def main() -> None:
         raise SystemExit(1) from None
 
     strategies = _resolve_strategies()
-    logger.info(
-        "boot.strategies_resolved",
-        extra={
-            "symbols": settings.trading_symbols,
-            "per_symbol": {
-                s: settings.strategy_per_symbol.get(s, settings.default_strategy)
-                for s in settings.trading_symbols
-            },
-        },
-    )
+    logger.info("boot.strategies_resolved", extra={
+        "symbols": settings.trading_symbols,
+        "per_symbol": {s: settings.strategy_per_symbol.get(s, settings.default_strategy)
+                       for s in settings.trading_symbols},
+    })
 
     exchange = BinanceAdapter(
-        api_key=settings.binance_api_key,
-        api_secret=settings.binance_api_secret,
+        api_key=settings.binance_api_key, api_secret=settings.binance_api_secret,
         testnet=settings.binance_testnet,
     )
+
+    market_type = MarketType(settings.default_market_type)
+    symbol_info = SymbolInfoService()
+    loaded = await symbol_info.load(exchange, market_type=market_type)
+    if loaded == 0:
+        logger.warning("boot.symbol_info_empty")
+
+    # Boot cleanup (dev/test): fecha posições residuais antes dos agentes subirem.
+    if settings.close_positions_on_boot:
+        if settings.binance_api_key and settings.binance_api_secret:
+            await close_all_futures_positions_on_boot(exchange)
+        else:
+            logger.warning("boot_cleanup.skipped_no_credentials")
+    else:
+        logger.info("boot_cleanup.disabled")
 
     event_bus = EventBus()
     registry = AgentRegistry()
     context = AgentContext(
-        exchange=exchange,
-        event_bus=event_bus,
-        settings=settings,
-        registry=registry,
-        session_factory=AsyncSessionLocal,
+        exchange=exchange, event_bus=event_bus, settings=settings,
+        registry=registry, session_factory=AsyncSessionLocal,
     )
 
     workflows: GitHubWorkflows | None = None
     gh_client: GitHubClient | None = None
     if settings.github_token and settings.github_repo:
-        gh_client = GitHubClient(
-            token=settings.github_token,
-            repo=settings.github_repo,
-            base_url=settings.github_api_url,
-        )
-        workflows = GitHubWorkflows(
-            client=gh_client,
-            policy=default_policy(),
-            enabled=settings.github_autonomy_enabled,
-        )
+        gh_client = GitHubClient(token=settings.github_token, repo=settings.github_repo,
+                                 base_url=settings.github_api_url)
+        workflows = GitHubWorkflows(client=gh_client, policy=default_policy(),
+                                    enabled=settings.github_autonomy_enabled)
 
     heartbeat = HeartbeatMonitor(max_age_seconds=settings.heartbeat_max_age_s)
-
     ml_agent = MLAgent(context, model_dir=MODEL_DIR, horizon=settings.ml_horizon)
 
     registry.register(TradingManager(context))
     registry.register(RiskAgent(context))
     registry.register(PortfolioAgent(context))
-    registry.register(ExecutionAgent(context))
+    registry.register(ExecutionAgent(context, symbol_info=symbol_info))
     registry.register(AuditorAgent(context))
+    registry.register(RoundTripAgent(context))
     registry.register(TradeRecorderAgent(context))
     registry.register(QAAgent(context))
-    registry.register(
-        EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows)
-    )
+    registry.register(EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows))
     registry.register(ResearchAgent(context, workflows=workflows))
     registry.register(ml_agent)
 
-    market_type = MarketType(settings.default_market_type)
     for symbol in settings.trading_symbols:
-        registry.register(
-            AssetAgent(
-                context,
-                symbol=symbol,
-                market_type=market_type,
-                interval=settings.default_interval,
-                strategy=strategies.get(symbol),
-            )
-        )
+        registry.register(AssetAgent(
+            context, symbol=symbol, market_type=market_type,
+            interval=settings.default_interval, strategy=strategies.get(symbol),
+        ))
 
     orchestrator = Orchestrator(context, registry)
-
     health = HealthChecker()
     health.register("exchange.ping", exchange.ping)
-
-    backfill = HistoryBackfillService(
-        exchange=exchange,
-        session_factory=AsyncSessionLocal,
-    )
-
+    backfill = HistoryBackfillService(exchange=exchange, session_factory=AsyncSessionLocal)
     backfill_first_run_done = asyncio.Event()
 
     async def db_ping_task() -> None:
-        await run_database_ping_loop(
-            event_bus=event_bus,
-            interval_seconds=settings.db_ping_interval_s,
-        )
+        await run_database_ping_loop(event_bus=event_bus,
+                                     interval_seconds=settings.db_ping_interval_s)
 
     async def heartbeat_task() -> None:
         while True:
@@ -187,34 +186,22 @@ async def main() -> None:
             report = await health.run()
             for c in report.components:
                 if c.status == "down":
-                    await event_bus.publish(
-                        HealthCheckFailed(component=c.name, detail=c.detail)
-                    )
+                    await event_bus.publish(HealthCheckFailed(component=c.name, detail=c.detail))
             await asyncio.sleep(settings.health_check_interval_s)
 
     async def reconcile_task() -> None:
-        reconciler = Reconciler(
-            exchange=exchange,
-            session_factory=AsyncSessionLocal,
-        )
+        reconciler = Reconciler(exchange=exchange, session_factory=AsyncSessionLocal)
         while True:
             try:
                 report = await reconciler.reconcile(market_type=market_type)
                 if not report.balanced:
-                    await event_bus.publish(
-                        HealthCheckFailed(
-                            component="reconciliation",
-                            detail=(
-                                f"missing_on_exchange={report.missing_on_exchange} "
-                                f"missing_in_db={report.missing_in_db}"
-                            ),
-                        )
-                    )
+                    await event_bus.publish(HealthCheckFailed(
+                        component="reconciliation",
+                        detail=(f"missing_on_exchange={report.missing_on_exchange} "
+                                f"missing_in_db={report.missing_in_db}"),
+                    ))
             except ExchangeAuthError as exc:
-                logger.warning(
-                    "reconcile.skipped",
-                    extra={"reason": "auth", "detail": str(exc)},
-                )
+                logger.warning("reconcile.skipped", extra={"reason": "auth", "detail": str(exc)})
             except Exception:
                 logger.exception("reconcile.failed")
             await asyncio.sleep(settings.reconcile_interval_s)
@@ -225,142 +212,137 @@ async def main() -> None:
                 await backfill.backfill(
                     symbols=list(settings.trading_symbols),
                     interval=settings.default_interval,
-                    market_type=market_type,
-                    limit=500,
+                    market_type=market_type, limit=500,
                 )
             except Exception:
                 logger.exception("backfill.failed")
-
         await _run_once()
         backfill_first_run_done.set()
-
         while True:
             await asyncio.sleep(86400)
             await _run_once()
 
     async def candle_stream_task() -> None:
-        streams = [
-            CandleStreamService(
-                exchange=exchange,
-                event_bus=event_bus,
-                symbol=symbol,
-                interval=settings.default_interval,
-                market_type=market_type,
-                poll_interval_s=settings.candle_stream_interval_s,
-            )
-            for symbol in settings.trading_symbols
-        ]
+        streams = [CandleStreamService(
+            exchange=exchange, event_bus=event_bus, symbol=symbol,
+            interval=settings.default_interval, market_type=market_type,
+            poll_interval_s=settings.candle_stream_interval_s,
+        ) for symbol in settings.trading_symbols]
         await asyncio.gather(*(s.run_forever() for s in streams))
 
     async def autotrain_task() -> None:
         await backfill_first_run_done.wait()
-
         symbols = settings.ml_autotrain_symbols or list(settings.trading_symbols)
         if not symbols:
             logger.info("ml.autotrain_no_symbols")
             return
-
-        logger.info(
-            "ml.autotrain_starting",
-            extra={"symbols": symbols, "limit": settings.ml_autotrain_limit},
-        )
+        logger.info("ml.autotrain_starting", extra={"symbols": symbols})
         try:
-            await autotrain_all(
-                ml_agent=ml_agent,
-                symbols=symbols,
-                market_type=market_type,
-                interval=settings.default_interval,
-                limit=settings.ml_autotrain_limit,
-            )
+            await autotrain_all(ml_agent=ml_agent, symbols=symbols,
+                                market_type=market_type,
+                                interval=settings.default_interval,
+                                limit=settings.ml_autotrain_limit)
         except Exception:
             logger.exception("ml.autotrain_failed")
 
     async def evolution_task() -> None:
-        collector = MetricsCollector(
-            session_factory=AsyncSessionLocal,
-            lookback_hours=24,
-        )
+        collector = MetricsCollector(session_factory=AsyncSessionLocal, lookback_hours=24)
 
         async def metrics_provider() -> dict[str, float]:
             return (await collector.collect()).as_dict()
 
         loop = EvolutionLoop(
-            workflows=workflows,  # type: ignore[arg-type]
-            metrics_provider=metrics_provider,
+            workflows=workflows, metrics_provider=metrics_provider,
             change_generator=NullChangeGenerator(),
             interval_seconds=settings.evolution_interval_s,
             cooldown_seconds=settings.evolution_cooldown_s,
         )
         await loop.run_forever()
 
+    async def _handle_user_stream_event(event: dict[str, Any]) -> None:
+        if event.get("e") != "ORDER_TRADE_UPDATE":
+            return
+        order = map_order_trade_update(event, market_type)
+        if order is None:
+            return
+        if not order.fills or order.average_price is None:
+            return
+        await event_bus.publish(OrderFilled(
+            exchange_order_id=order.exchange_order_id,
+            symbol=order.symbol,
+            filled_quantity=float(order.executed_quantity),
+            average_price=float(order.average_price),
+            order=order,
+        ))
+        logger.info("user_stream.order_filled", extra={
+            "order_id": order.exchange_order_id,
+            "symbol": order.symbol,
+            "status": order.status.value,
+            "num_fills": len(order.fills),
+        })
+
+    async def user_stream_task() -> None:
+        if not (settings.binance_api_key and settings.binance_api_secret):
+            logger.warning("user_stream.skipped_no_credentials")
+            return
+        try:
+            client = _extract_binance_client(exchange)
+        except RuntimeError:
+            logger.exception("user_stream.no_client")
+            return
+        uds = UserDataStreamClient(client)
+        try:
+            async for event in uds.stream():
+                try:
+                    await _handle_user_stream_event(event)
+                except Exception:
+                    logger.exception("user_stream.event_handler_failed")
+        finally:
+            await uds.stop()
+
     tasks: list = [db_ping_task, heartbeat_task, health_task, backfill_task]
 
     if settings.candle_stream_enabled:
         tasks.append(candle_stream_task)
-        logger.info(
-            "candle_stream.enabled",
-            extra={
-                "symbols": list(settings.trading_symbols),
-                "interval": settings.default_interval,
-                "poll_interval_s": settings.candle_stream_interval_s,
-            },
-        )
+        logger.info("candle_stream.enabled", extra={
+            "symbols": list(settings.trading_symbols),
+            "interval": settings.default_interval,
+            "poll_interval_s": settings.candle_stream_interval_s,
+        })
     else:
         logger.info("candle_stream.disabled")
 
     if settings.ml_autotrain_on_boot:
         tasks.append(autotrain_task)
-        logger.info(
-            "ml.autotrain_enabled",
-            extra={
-                "symbols": settings.ml_autotrain_symbols
-                or list(settings.trading_symbols),
-                "limit": settings.ml_autotrain_limit,
-            },
-        )
+        logger.info("ml.autotrain_enabled", extra={
+            "symbols": settings.ml_autotrain_symbols or list(settings.trading_symbols),
+            "limit": settings.ml_autotrain_limit,
+        })
     else:
         logger.info("ml.autotrain_disabled")
 
     if settings.binance_api_key and settings.binance_api_secret:
         tasks.append(reconcile_task)
+        logger.info("reconcile.enabled")
     else:
-        logger.warning(
-            "reconcile.disabled",
-            extra={
-                "reason": "BINANCE_API_KEY/SECRET ausentes no .env",
-                "hint": "preencha .env para ativar a reconciliação DB <-> exchange",
-            },
-        )
+        logger.warning("reconcile.disabled")
+
+    if settings.user_stream_enabled:
+        tasks.append(user_stream_task)
+        logger.info("user_stream.enabled")
+    else:
+        logger.info("user_stream.disabled")
 
     if workflows is not None:
         tasks.append(evolution_task)
         if workflows.enabled:
-            logger.info(
-                "evolution.loop_enabled",
-                extra={
-                    "interval_s": settings.evolution_interval_s,
-                    "cooldown_s": settings.evolution_cooldown_s,
-                },
-            )
+            logger.info("evolution.loop_enabled")
         else:
-            logger.info(
-                "evolution.loop_in_observation_mode",
-                extra={
-                    "reason": "GITHUB_AUTONOMY_ENABLED=false",
-                    "hint": "defina como true no .env para permitir PRs automáticos",
-                },
-            )
+            logger.info("evolution.loop_in_observation_mode")
     else:
-        logger.warning(
-            "evolution.disabled",
-            extra={
-                "reason": "GITHUB_TOKEN/GITHUB_REPO ausentes no .env",
-                "hint": "preencha .env para ativar o loop de evolução",
-            },
-        )
+        logger.warning("evolution.disabled")
 
     lifecycle = ApplicationLifecycle(orchestrator=orchestrator, tasks=tasks)
-
     try:
         await lifecycle.run_forever()
     finally:

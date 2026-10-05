@@ -14,7 +14,7 @@ from app.core.enums import (
     OrderType,
     SignalDirection,
 )
-from app.domain.models.order import Order
+from app.domain.models.order import Order, OrderFill
 from app.domain.models.signal import Signal
 from app.orchestration.orchestrator import Orchestrator
 
@@ -32,6 +32,32 @@ def _signal(confidence: float = 0.9) -> Signal:
         strategy="momentum",
         agent="asset::BTCUSDT",
         generated_at=datetime.now(UTC),
+    )
+
+
+def _filled_order() -> Order:
+    return Order(
+        exchange_order_id="X-1",
+        client_order_id="c-1",
+        symbol="BTCUSDT",
+        market_type=MarketType.FUTURES,
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        status=OrderStatus.FILLED,
+        quantity=Decimal("0.1"),
+        executed_quantity=Decimal("0.1"),
+        average_price=Decimal(60000),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        fills=[
+            OrderFill(
+                price=Decimal(60000),
+                quantity=Decimal("0.1"),
+                commission=Decimal("0.01"),
+                commission_asset="USDT",
+                timestamp=datetime.now(UTC),
+            )
+        ],
     )
 
 
@@ -68,23 +94,10 @@ async def test_submit_signal_full_pipeline(context):
     orch = _build_orchestrator(context)
     await orch.start()
 
-    fake_order = Order(
-        exchange_order_id="X-1",
-        client_order_id="c-1",
-        symbol="BTCUSDT",
-        market_type=MarketType.FUTURES,
-        side=OrderSide.BUY,
-        type=OrderType.MARKET,
-        status=OrderStatus.NEW,
-        quantity=Decimal("0.1"),
-        executed_quantity=Decimal(0),
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-    )
-    context.exchange.orders.place_order.return_value = fake_order
+    context.exchange.orders.place_order.return_value = _filled_order()
 
     order = await orch.submit_signal(_signal(confidence=0.9))
-    assert order is fake_order
+    assert order.status is OrderStatus.FILLED
     context.exchange.orders.place_order.assert_awaited_once()
 
     sent_request = context.exchange.orders.place_order.await_args.args[0]

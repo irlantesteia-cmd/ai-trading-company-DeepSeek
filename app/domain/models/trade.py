@@ -20,19 +20,26 @@ class Trade(DomainModel):
     fee_asset: str
     realized_pnl: Decimal | None = None  # apenas FUTURES
     timestamp: datetime
+    round_trip_id: str | None = None
+    role: str = "UNKNOWN"
 
 
 class RoundTrip(DomainModel):
     """Trade fechado: abertura + fechamento (útil para métricas)."""
 
+    round_trip_id: str
     symbol: str
     market_type: MarketType
-    direction: PositionSide
+    position_side: PositionSide
+    status: str  # OPEN / CLOSED
+    close_reason: str | None = None
+    entry_quantity: Decimal
+    entry_avg_price: Decimal
+    entry_fee: Decimal = Decimal(0)
+    exit_quantity: Decimal = Decimal(0)
+    exit_avg_price: Decimal | None = None
+    exit_fee: Decimal = Decimal(0)
+    gross_pnl: Decimal | None = None
+    net_pnl: Decimal | None = None
     opened_at: datetime
-    closed_at: datetime
-    entry_price: Decimal
-    exit_price: Decimal
-    quantity: Decimal
-    gross_pnl: Decimal
-    fees: Decimal
-    net_pnl: Decimal
+    closed_at: datetime | None = None

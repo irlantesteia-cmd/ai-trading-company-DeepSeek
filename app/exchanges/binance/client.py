@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 
 import httpx
 
+from app.core.config import settings
 from app.core.enums import MarketType
 from app.core.exceptions import (
     ExchangeAuthError,
@@ -21,35 +22,15 @@ from app.core.exceptions import (
 
 logger = logging.getLogger(__name__)
 
-# Produção
 SPOT_REST_PROD = "https://api.binance.com"
 FUTURES_REST_PROD = "https://fapi.binance.com"
-
-# Demo Trading (substitui o antigo testnet.binancefuture.com)
 SPOT_REST_DEMO = "https://demo-api.binance.com"
 FUTURES_REST_DEMO = "https://demo-fapi.binance.com"
 
-_WEIGHT_LIMIT = {
-    MarketType.SPOT: 1200,
-    MarketType.FUTURES: 2400,
-}
+_WEIGHT_LIMIT = {MarketType.SPOT: 1200, MarketType.FUTURES: 2400}
 
 
 class BinanceClient:
-    """Cliente REST assinado (HMAC-SHA256).
-
-    Endpoints:
-        - Produção: api.binance.com / fapi.binance.com
-        - Demo Trading: demo-api.binance.com / demo-fapi.binance.com
-          (a Binance descontinuou o testnet.binancefuture.com em 2026)
-
-    Recursos:
-        - Time sync com /time por mercado (compensação de clock drift).
-        - Retry exponencial em 5xx / rate-limit / rede.
-        - Re-sync automático em -1021 / -1022 (assinatura inválida).
-        - Requests assinadas NÃO prosseguem se o time sync falhar.
-    """
-
     def __init__(
         self,
         api_key: str,
@@ -66,18 +47,9 @@ class BinanceClient:
         self._max_retries = max_retries
         self._recv_window_ms = recv_window_ms
         self._time_sync_attempts = max(1, time_sync_attempts)
-        self._weight_used: dict[MarketType, int] = {
-            MarketType.SPOT: 0,
-            MarketType.FUTURES: 0,
-        }
-        self._time_offset_ms: dict[MarketType, int] = {
-            MarketType.SPOT: 0,
-            MarketType.FUTURES: 0,
-        }
-        self._time_synced: dict[MarketType, bool] = {
-            MarketType.SPOT: False,
-            MarketType.FUTURES: False,
-        }
+        self._weight_used = {MarketType.SPOT: 0, MarketType.FUTURES: 0}
+        self._time_offset_ms = {MarketType.SPOT: 0, MarketType.FUTURES: 0}
+        self._time_synced = {MarketType.SPOT: False, MarketType.FUTURES: False}
         self._time_sync_lock = asyncio.Lock()
         self._base_urls = {
             MarketType.SPOT: SPOT_REST_DEMO if testnet else SPOT_REST_PROD,
@@ -90,22 +62,15 @@ class BinanceClient:
         return dict(self._base_urls)
 
     @property
-    def weight_used(self) -> dict[MarketType, int]:
-        return dict(self._weight_used)
-
-    @property
     def time_offset_ms(self) -> dict[MarketType, int]:
         return dict(self._time_offset_ms)
 
     async def close(self) -> None:
         await self._http.aclose()
 
-    # ------------------------------------------------------------------ signing
     def _sign_query(self, query_string: str) -> str:
         return hmac.new(
-            self._api_secret.encode(),
-            query_string.encode(),
-            hashlib.sha256,
+            self._api_secret.encode(), query_string.encode(), hashlib.sha256
         ).hexdigest()
 
     def _build_url(
@@ -119,9 +84,7 @@ class BinanceClient:
     ) -> str:
         query = dict(params)
         if signed:
-            query["timestamp"] = (
-                int(time.time() * 1000) + self._time_offset_ms[market_type]
-            )
+            query["timestamp"] = int(time.time() * 1000) + self._time_offset_ms[market_type]
             query["recvWindow"] = self._recv_window_ms
 
         qs = urlencode(query)
@@ -129,11 +92,8 @@ class BinanceClient:
             signature = self._sign_query(qs)
             qs = f"{qs}&signature={signature}"
 
-        if not qs:
-            return f"{base_url}{path}"
-        return f"{base_url}{path}?{qs}"
+        return f"{base_url}{path}?{qs}" if qs else f"{base_url}{path}"
 
-    # -------------------------------------------------------------- time sync
     async def sync_time(self, market_type: MarketType) -> int:
         async with self._time_sync_lock:
             return await self._do_sync_time(market_type)
@@ -149,16 +109,22 @@ class BinanceClient:
         server_time = int(response.json()["serverTime"])
         local_mid = (local_before + local_after) // 2
         offset = server_time - local_mid
+        rtt = local_after - local_before
+
+        if rtt > settings.binance_max_rtt_ms_for_sync:
+            logger.warning(
+                "binance.time_sync_high_rtt",
+                extra={"market": market_type.value, "rtt_ms": rtt, "offset_ms": offset},
+            )
+            raise ExchangeConnectionError(
+                f"time sync com RTT {rtt}ms acima do limite"
+            )
 
         self._time_offset_ms[market_type] = offset
         self._time_synced[market_type] = True
         logger.info(
             "binance.time_synced",
-            extra={
-                "market": market_type.value,
-                "offset_ms": offset,
-                "rtt_ms": local_after - local_before,
-            },
+            extra={"market": market_type.value, "offset_ms": offset, "rtt_ms": rtt},
         )
         return offset
 
@@ -171,16 +137,12 @@ class BinanceClient:
             try:
                 await self._do_sync_time(market_type)
                 return
-            except (httpx.HTTPError, OSError, ValueError) as exc:
+            except (httpx.HTTPError, OSError, ValueError, ExchangeConnectionError) as exc:
                 last_exc = exc
                 logger.warning(
                     "binance.time_sync_failed",
-                    extra={
-                        "market": market_type.value,
-                        "attempt": attempt,
-                        "error": str(exc) or type(exc).__name__,
-                        "error_type": type(exc).__name__,
-                    },
+                    extra={"market": market_type.value, "attempt": attempt,
+                           "error": str(exc) or type(exc).__name__},
                 )
                 if attempt + 1 < self._time_sync_attempts:
                     await asyncio.sleep(0.5 * (attempt + 1))
@@ -190,7 +152,6 @@ class BinanceClient:
             f"{self._time_sync_attempts} tentativas: {last_exc}"
         )
 
-    # ------------------------------------------------------------------ request
     async def request(
         self,
         method: str,
@@ -198,8 +159,16 @@ class BinanceClient:
         *,
         market_type: MarketType,
         signed: bool = False,
+        api_key_only: bool = False,
         params: dict[str, Any] | None = None,
     ) -> Any:
+        """Executa request REST.
+
+        `signed=True` → assina (timestamp+recvWindow+signature) e envia header.
+        `api_key_only=True` → apenas envia `X-MBX-APIKEY` (ex.: `/listenKey`).
+        Ambos os casos enviam o header; nenhum deles adiciona assinatura por
+        conta própria.
+        """
         base = self._base_urls[market_type]
         base_params = dict(params or {})
 
@@ -208,30 +177,19 @@ class BinanceClient:
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries + 1):
-            url = self._build_url(
-                base,
-                path,
-                base_params,
-                signed=signed,
-                market_type=market_type,
-            )
+            url = self._build_url(base, path, base_params, signed=signed, market_type=market_type)
             headers: dict[str, str] = {}
-            if signed:
+            if signed or api_key_only:
                 headers["X-MBX-APIKEY"] = self._api_key
 
             try:
                 response = await self._http.request(method, url, headers=headers)
             except httpx.HTTPError as exc:
                 last_exc = exc
-                logger.warning(
-                    "binance.http_error",
-                    extra={
-                        "error": str(exc) or type(exc).__name__,
-                        "error_type": type(exc).__name__,
-                        "attempt": attempt,
-                        "path": path,
-                    },
-                )
+                logger.warning("binance.http_error", extra={
+                    "error": str(exc) or type(exc).__name__,
+                    "error_type": type(exc).__name__, "attempt": attempt, "path": path,
+                })
                 await asyncio.sleep(self._backoff(attempt))
                 continue
 
@@ -242,13 +200,10 @@ class BinanceClient:
 
             if response.status_code == 400 and self._is_signature_error(response):
                 self._log_signature_diagnostic(market_type, path, response)
-                logger.warning(
-                    "binance.timestamp_resync",
-                    extra={"attempt": attempt, "path": path},
-                )
+                logger.warning("binance.timestamp_resync", extra={"attempt": attempt, "path": path})
                 try:
                     await self._do_sync_time(market_type)
-                except (httpx.HTTPError, OSError, ValueError):
+                except (httpx.HTTPError, OSError, ValueError, ExchangeConnectionError):
                     logger.exception("binance.timestamp_resync_failed")
                 await asyncio.sleep(self._backoff(attempt) * 0.5)
                 continue
@@ -269,7 +224,6 @@ class BinanceClient:
             f"Binance request falhou após {self._max_retries + 1} tentativas: {last_exc}"
         )
 
-    # ------------------------------------------------------------------ helpers
     def _track_weight(self, market_type: MarketType, response: httpx.Response) -> None:
         header = response.headers.get("X-MBX-USED-WEIGHT-1M")
         if header is None:
@@ -280,14 +234,9 @@ class BinanceClient:
             return
         limit = _WEIGHT_LIMIT[market_type]
         if self._weight_used[market_type] >= limit * 0.9:
-            logger.warning(
-                "binance.weight_high",
-                extra={
-                    "market": market_type.value,
-                    "used": self._weight_used[market_type],
-                    "limit": limit,
-                },
-            )
+            logger.warning("binance.weight_high", extra={
+                "market": market_type.value, "used": self._weight_used[market_type], "limit": limit,
+            })
 
     @staticmethod
     def _backoff(attempt: int) -> float:
@@ -301,33 +250,15 @@ class BinanceClient:
             return False
         return code in (-1021, -1022)
 
-    def _log_signature_diagnostic(
-        self,
-        market_type: MarketType,
-        path: str,
-        response: httpx.Response,
-    ) -> None:
-        key = self._api_key
-        secret = self._api_secret
-        logger.error(
-            "binance.signature_rejected_diagnostic",
-            extra={
-                "market": market_type.value,
-                "path": path,
-                "body": response.text[:200],
-                "api_key_len": len(key),
-                "api_key_has_whitespace": any(c.isspace() for c in key),
-                "api_key_has_quote": ('"' in key) or ("'" in key),
-                "secret_len": len(secret),
-                "secret_has_whitespace": any(c.isspace() for c in secret),
-                "secret_has_quote": ('"' in secret) or ("'" in secret),
-                "hint": (
-                    "Se secret_len != 64 ou *_has_whitespace/*_has_quote for "
-                    "True, limpe o .env. Se estiver OK, gere nova chave em "
-                    "https://demo.binance.com/en/my/settings/api-management"
-                ),
-            },
-        )
+    def _log_signature_diagnostic(self, market_type, path, response) -> None:
+        key, secret = self._api_key, self._api_secret
+        logger.error("binance.signature_rejected_diagnostic", extra={
+            "market": market_type.value, "path": path, "body": response.text[:200],
+            "api_key_len": len(key), "api_key_has_whitespace": any(c.isspace() for c in key),
+            "api_key_has_quote": ('"' in key) or ("'" in key),
+            "secret_len": len(secret), "secret_has_whitespace": any(c.isspace() for c in secret),
+            "secret_has_quote": ('"' in secret) or ("'" in secret),
+        })
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:

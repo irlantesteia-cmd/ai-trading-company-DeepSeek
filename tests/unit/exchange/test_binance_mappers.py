@@ -119,7 +119,8 @@ def test_order_request_to_params_spot():
     assert "reduceOnly" not in params
 
 
-def test_order_request_to_params_futures_reduce_only():
+def test_order_request_futures_one_way_reduce_only():
+    """One-way mode: reduceOnly=true sem positionSide."""
     params = order_request_to_params(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
@@ -128,11 +129,66 @@ def test_order_request_to_params_futures_reduce_only():
         client_order_id="c-2",
         market_type=MarketType.FUTURES,
         reduce_only=True,
-        position_side=PositionSide.LONG,
     )
     assert params["reduceOnly"] == "true"
-    assert params["positionSide"] == "LONG"
+    assert "positionSide" not in params
     assert "newOrderRespType" not in params
+
+
+def test_order_request_futures_hedge_mode_no_reduce_only():
+    """Hedge mode: positionSide=LONG/SHORT e SEM reduceOnly (-1106)."""
+    params = order_request_to_params(
+        symbol="XRPUSDT",
+        side=OrderSide.BUY,
+        type_=OrderType.MARKET,
+        quantity=Decimal("6670.6"),
+        client_order_id="c-3",
+        market_type=MarketType.FUTURES,
+        position_side=PositionSide.SHORT,
+        reduce_only=True,  # deve ser ignorado em hedge mode
+    )
+    assert params["positionSide"] == "SHORT"
+    assert "reduceOnly" not in params
+
+
+def test_order_request_market_omits_stop_price():
+    """MARKET não aceita stopPrice (-1106). Ignorado silenciosamente."""
+    params = order_request_to_params(
+        symbol="XRPUSDT",
+        side=OrderSide.SELL,
+        type_=OrderType.MARKET,
+        quantity=Decimal("6717.7"),
+        client_order_id="c-4",
+        market_type=MarketType.FUTURES,
+        stop_price=Decimal("1.4935"),
+    )
+    assert "stopPrice" not in params
+
+
+def test_order_request_stop_market_keeps_stop_price():
+    params = order_request_to_params(
+        symbol="XRPUSDT",
+        side=OrderSide.SELL,
+        type_=OrderType.STOP_MARKET,
+        quantity=Decimal("6717.7"),
+        client_order_id="c-5",
+        market_type=MarketType.FUTURES,
+        stop_price=Decimal("1.4935"),
+    )
+    assert params["stopPrice"] == "1.4935"
+
+
+def test_order_request_take_profit_market_keeps_stop_price():
+    params = order_request_to_params(
+        symbol="BTCUSDT",
+        side=OrderSide.SELL,
+        type_=OrderType.TAKE_PROFIT_MARKET,
+        quantity=Decimal("0.1"),
+        client_order_id="c-6",
+        market_type=MarketType.FUTURES,
+        stop_price=Decimal(65000),
+    )
+    assert params["stopPrice"] == "65000"
 
 
 def test_map_futures_position_long():
@@ -177,7 +233,6 @@ def test_map_futures_position_short_from_negative_amt():
 
 
 def test_map_futures_position_crossed_margin_aliases():
-    """Binance devolve "cross"; domínio usa CROSSED. Também aceitamos o alias "crossed"."""
     for alias in ("cross", "CROSS", "crossed", "CROSSED"):
         raw = {
             "symbol": "SOLUSDT",
@@ -195,7 +250,6 @@ def test_map_futures_position_crossed_margin_aliases():
 
 
 def test_map_futures_position_isolated_bool_fallback():
-    """Quando só vem o campo booleano `isolated`, usamos ele."""
     raw_isolated = {
         "symbol": "XRPUSDT",
         "positionAmt": "10",

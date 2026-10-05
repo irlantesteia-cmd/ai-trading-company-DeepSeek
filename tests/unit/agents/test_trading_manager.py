@@ -14,7 +14,7 @@ from app.core.enums import (
     OrderType,
     SignalDirection,
 )
-from app.domain.models.order import Order
+from app.domain.models.order import Order, OrderFill
 from app.domain.models.position import SpotBalance
 from app.domain.models.signal import Signal
 from app.events.event import SignalApproved, SignalGenerated, SignalRejected
@@ -33,6 +33,33 @@ def _signal(confidence: float = 0.9) -> Signal:
         strategy="momentum",
         agent="asset::BTCUSDT",
         generated_at=datetime.now(UTC),
+    )
+
+
+def _filled_order() -> Order:
+    """Order já FILLED — evita o polling de fill em testes que não o cobrem."""
+    return Order(
+        exchange_order_id="X-1",
+        client_order_id="c-1",
+        symbol="BTCUSDT",
+        market_type=MarketType.FUTURES,
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        status=OrderStatus.FILLED,
+        quantity=Decimal("0.1"),
+        executed_quantity=Decimal("0.1"),
+        average_price=Decimal(60000),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        fills=[
+            OrderFill(
+                price=Decimal(60000),
+                quantity=Decimal("0.1"),
+                commission=Decimal("0.01"),
+                commission_asset="USDT",
+                timestamp=datetime.now(UTC),
+            )
+        ],
     )
 
 
@@ -72,23 +99,10 @@ async def test_approves_and_places_order(context):
 
     context.event_bus.subscribe(SignalApproved, handler)
 
-    fake_order = Order(
-        exchange_order_id="X-1",
-        client_order_id="c-1",
-        symbol="BTCUSDT",
-        market_type=MarketType.FUTURES,
-        side=OrderSide.BUY,
-        type=OrderType.MARKET,
-        status=OrderStatus.NEW,
-        quantity=Decimal("0.1"),
-        executed_quantity=Decimal(0),
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-    )
-    context.exchange.orders.place_order.return_value = fake_order
+    context.exchange.orders.place_order.return_value = _filled_order()
 
     order = await manager.process_signal(_signal(confidence=0.9))
-    assert order is fake_order
+    assert order.status is OrderStatus.FILLED
     assert len(approved) == 1
 
     sent_request = context.exchange.orders.place_order.await_args.args[0]
@@ -121,20 +135,7 @@ async def test_auto_execution_enabled_processes_signal(context):
     context.settings.signal_auto_execution_enabled = True
     manager = _wire(context)
 
-    fake_order = Order(
-        exchange_order_id="X-1",
-        client_order_id="c-1",
-        symbol="BTCUSDT",
-        market_type=MarketType.FUTURES,
-        side=OrderSide.BUY,
-        type=OrderType.MARKET,
-        status=OrderStatus.NEW,
-        quantity=Decimal("0.1"),
-        executed_quantity=Decimal(0),
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-    )
-    context.exchange.orders.place_order.return_value = fake_order
+    context.exchange.orders.place_order.return_value = _filled_order()
     await manager.start()
 
     await context.event_bus.publish(

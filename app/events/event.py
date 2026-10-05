@@ -137,3 +137,17 @@ class SystemStopped(Event):
 class HealthCheckFailed(Event):
     component: str
     detail: str
+
+
+class RoundTripAssigned(Event):
+    """Emitido pelo `RoundTripAgent` a cada `OrderFilled` processado.
+
+    Carrega o `round_trip_id` (ciclo lógico) e o papel (`ENTRY`/`EXIT`)
+    do `OrderFilled` para que o `TradeRecorderAgent` popule as colunas
+    `round_trip_id` e `role` no `TradeORM`.
+    """
+
+    round_trip_id: str
+    order_id: str
+    symbol: str
+    role: str  # ENTRY / EXIT

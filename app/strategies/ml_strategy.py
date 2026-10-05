@@ -25,9 +25,8 @@ logger = logging.getLogger(__name__)
 class MLStrategy(Strategy):
     """Wrapa `MLSignalGenerator` num `Strategy` carregado sob demanda.
 
-    O arquivo `models/<symbol>_h<horizon>_<timestamp>.joblib` mais recente
-    é escolhido. Se nenhum existir, `generate()` retorna `None` até o
-    próximo treino criar um.
+    Thresholds configuráveis via construtor; quando omitidos, usa os defaults
+    do `MLSignalGenerator` (0.6 / 0.4).
     """
 
     name = "ml_classifier"
@@ -39,11 +38,15 @@ class MLStrategy(Strategy):
         model_dir: Path,
         horizon: int = 5,
         pipeline: FeaturePipeline | None = None,
+        long_threshold: float = 0.6,
+        short_threshold: float = 0.4,
     ) -> None:
         self._symbol = symbol
         self._model_dir = model_dir
         self._horizon = horizon
         self._pipeline = pipeline or default_pipeline()
+        self._long_threshold = long_threshold
+        self._short_threshold = short_threshold
         self._generator: MLSignalGenerator | None = None
         self._load_attempted: bool = False
 
@@ -53,7 +56,6 @@ class MLStrategy(Strategy):
 
     @property
     def warmup(self) -> int:
-        # 30 cobre a maior feature (volatility_20 → ~21 amostras) com folga.
         return 30
 
     def generate(self, ctx: StrategyContext) -> Signal | None:
@@ -64,7 +66,6 @@ class MLStrategy(Strategy):
 
     # ------------------------------------------------------------------ internals
     def _ensure_loaded(self) -> bool:
-        """Tenta carregar o modelo do disco. Retorna True se disponível."""
         candidates = sorted(
             self._model_dir.glob(f"{self._symbol}_h{self._horizon}_*.joblib"),
             reverse=True,
@@ -87,9 +88,19 @@ class MLStrategy(Strategy):
             )
             return False
 
-        self._generator = MLSignalGenerator(model, self._pipeline)
+        self._generator = MLSignalGenerator(
+            model,
+            self._pipeline,
+            long_threshold=self._long_threshold,
+            short_threshold=self._short_threshold,
+        )
         logger.info(
             "ml_strategy.loaded",
-            extra={"symbol": self._symbol, "path": str(candidates[0])},
+            extra={
+                "symbol": self._symbol,
+                "path": str(candidates[0]),
+                "long_threshold": self._long_threshold,
+                "short_threshold": self._short_threshold,
+            },
         )
         return True

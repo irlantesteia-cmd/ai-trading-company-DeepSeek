@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from app.agents.base import BaseAgent, EventHandler
 from app.core.enums import AgentRole, RiskAction
+from app.core.exceptions import ExchangeError
 from app.domain.models.order import Order
 from app.domain.models.signal import Signal
 from app.events.event import Event, SignalApproved, SignalGenerated, SignalRejected
@@ -16,11 +17,10 @@ logger = logging.getLogger(__name__)
 class TradingManager(BaseAgent):
     """Orquestra o pipeline: Signal → Risk → Portfolio → Execution.
 
-    Escuta `SignalGenerated` publicado pelos `AssetAgent`. O que fazer com
-    cada sinal depende de `settings.signal_auto_execution_enabled`:
-
-    - `False` (default): sinal é logado e ignorado. Modo observação.
-    - `True`: `process_signal()` roda — risco → sizing → ordem na exchange.
+    Escuta `SignalGenerated`. O que fazer com cada sinal depende de
+    `settings.signal_auto_execution_enabled`:
+    - `False`: sinal é logado e ignorado.
+    - `True`: `process_signal()` roda — risco → sizing → ordem.
     """
 
     role = AgentRole.TRADING_MANAGER
@@ -55,14 +55,15 @@ class TradingManager(BaseAgent):
 
         try:
             await self.process_signal(event.signal)
-        except ValueError as exc:
-            # Estado operacional (ex.: equity zero, dados incompletos) —
-            # o mundo real. Log como warning, sem stack trace.
+        except (ValueError, ExchangeError) as exc:
+            # Estado operacional (equity zero, dados incompletos, exchange
+            # rejeitou) — mundo real, não bug. Log como warning sem traceback.
             logger.warning(
                 "trading_manager.signal_processing_skipped",
                 extra={
                     "signal_id": event.signal_id,
                     "symbol": event.symbol,
+                    "error_type": type(exc).__name__,
                     "reason": str(exc),
                 },
             )
