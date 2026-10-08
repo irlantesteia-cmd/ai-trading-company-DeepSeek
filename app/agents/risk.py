@@ -23,6 +23,7 @@ def _limits_from_settings(settings) -> RiskLimits:
         max_leverage=settings.risk_max_leverage,
         max_daily_loss=Decimal(str(settings.risk_max_daily_loss)),
         max_open_positions=settings.risk_max_open_positions,
+        max_same_direction=settings.risk_max_same_direction,
         min_confidence=settings.risk_min_confidence,
         correlated_groups=dict(settings.risk_correlated_groups),
     )

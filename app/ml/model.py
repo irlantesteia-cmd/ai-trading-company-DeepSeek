@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,8 @@ from numpy.typing import NDArray
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+
+_INFERRED_MIN_DEPLOY_AUC = 0.5
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,13 @@ class ModelMetadata:
     n_test: int
     metrics: dict[str, float] = field(default_factory=dict)
     hyperparams: dict[str, Any] = field(default_factory=dict)
+    baseline_accuracy: float = 0.0
+    baseline_auc: float = 0.5
+    n_purged: int = 0
+    deployable: bool = True
+    deploy_reason: str | None = None
+    # AUC por fold em walk-forward. Vazio em modelos de split único.
+    walk_forward_aucs: list[float] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -93,20 +103,16 @@ class ForwardReturnClassifier:
         return self._pipeline.predict(X).astype(np.int64)
 
     def proba_up(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Probabilidade da classe 1 (alta). Alinha com `Signal.confidence`."""
         proba = self.predict_proba(X)
         idx = int(np.where(self.classes_ == 1)[0][0]) if 1 in self.classes_ else 0
         return proba[:, idx]
 
-    # ------------------------------------------------------------- persistence
     def save(self, path: Path, metadata: ModelMetadata) -> None:
         if not self._fitted:
             raise RuntimeError("não é possível salvar modelo não treinado")
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self._pipeline, path)
         metadata_path = path.with_suffix(".json")
-        import json
-
         metadata_path.write_text(
             json.dumps(metadata.to_dict(), indent=2), encoding="utf-8"
         )
@@ -122,8 +128,55 @@ class ForwardReturnClassifier:
         obj._fitted = True
         return obj
 
+    @classmethod
+    def load_metadata(cls, path: Path) -> ModelMetadata | None:
+        """Lê a metadata `.json` ao lado de um `.joblib`.
+
+        Se o campo `deployable` estiver ausente (metadados pré-ML-2b),
+        infere a partir de `metrics.auc`: AUC < 0.5 → deployable=False.
+        """
+        metadata_path = path.with_suffix(".json")
+        if not metadata_path.exists():
+            return None
+        try:
+            raw = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(raw, dict):
+            return None
+
+        if "deployable" not in raw:
+            auc = raw.get("metrics", {}).get("auc")
+            if isinstance(auc, (int, float)) and auc < _INFERRED_MIN_DEPLOY_AUC:
+                raw["deployable"] = False
+                raw["deploy_reason"] = (
+                    f"inferred_from_auc ({auc:.4f} < {_INFERRED_MIN_DEPLOY_AUC})"
+                )
+
+        known = {
+            "version",
+            "symbol",
+            "horizon",
+            "feature_names",
+            "trained_at",
+            "n_train",
+            "n_test",
+            "metrics",
+            "hyperparams",
+            "baseline_accuracy",
+            "baseline_auc",
+            "n_purged",
+            "deployable",
+            "deploy_reason",
+            "walk_forward_aucs",
+        }
+        filtered = {k: v for k, v in raw.items() if k in known}
+        try:
+            return ModelMetadata(**filtered)
+        except TypeError:
+            return None
+
 
 def make_version(symbol: str, horizon: int) -> str:
-    """Versionamento determinístico-ish por timestamp UTC."""
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{symbol}_h{horizon}_{ts}"

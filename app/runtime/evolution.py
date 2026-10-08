@@ -4,7 +4,8 @@ Coleta métricas periodicamente, decide se vale propor uma mudança, e —
 se sim — abre um PR via `GitHubWorkflows` (sujeito à política de autonomia).
 
 O gerador padrão (`NullChangeGenerator`) nunca propõe nada. Habilitar
-evolução real significa injetar um `ChangeGenerator` customizado.
+evolução real significa injetar um `ChangeGenerator` customizado
+(ver `app/runtime/change_generator.py`).
 """
 
 from __future__ import annotations
@@ -41,6 +42,10 @@ class EvolutionLoop:
 
     `change_generator` retorna `None` quando não há mudança a propor.
     Cooldown impede propor PRs em rajada.
+
+    Se `workflows.enabled=False`, o loop é um no-op completo (não coleta
+    nem avalia): a autonomia desligada é uma garantia de segurança, não
+    apenas uma supressão de efeitos colaterais.
     """
 
     def __init__(

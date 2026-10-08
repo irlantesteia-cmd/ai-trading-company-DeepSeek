@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     risk_max_leverage: int = 10
     risk_max_daily_loss: float = 1_000.0
     risk_max_open_positions: int = 5
+    # Máximo de posições abertas na **mesma direção** (LONG ou SHORT).
+    # Evita concentração direcional quando vários símbolos disparam sinal
+    # no mesmo ciclo.
+    risk_max_same_direction: int = 2
     risk_min_confidence: float = 0.5
     risk_correlated_groups: dict[str, list[str]] = {"crypto_majors": ["BTCUSDT", "ETHUSDT"]}
 
@@ -91,6 +95,17 @@ class Settings(BaseSettings):
     ml_autotrain_symbols: list[str] = []
     ml_autotrain_limit: int = 500
     ml_horizon: int = 5
+    ml_min_deploy_auc: float = 0.5
+    ml_label_min_return_pct: float = 0.0
+    ml_boot_model_grace_seconds: float = 120.0
+    # Walk-forward validation (ML-3b)
+    ml_walk_forward_folds: int = 5
+    ml_walk_forward_max_std: float = 0.10
+    ml_walk_forward_min_train: int = 100
+    # Cross-asset features (ML-3d): símbolo principal → símbolo de referência.
+    # Vazio = desabilitado. Ex.: {"SOLUSDT": "BTCUSDT", "XRPUSDT": "BTCUSDT"}.
+    ml_cross_asset_ref: dict[str, str] = {}
+    ml_cross_asset_ref_horizons: list[int] = [1, 3, 5]
 
     # GitHub
     github_token: str = ""

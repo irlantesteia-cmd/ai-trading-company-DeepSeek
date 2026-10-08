@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import uuid4
 
 from app.core.config import settings
-from app.core.enums import MarginType, MarketType, OrderSide, OrderType, PositionSide
+from app.core.enums import (
+    MarginType,
+    MarketType,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PositionSide,
+)
 from app.core.exceptions import ExchangeError
-from app.domain.models.order import OrderRequest
+from app.domain.models.order import Order, OrderRequest
 from app.exchanges.base.positions import PositionProvider
 from app.exchanges.binance.client import BinanceClient
 from app.exchanges.binance.mappers import map_futures_position
@@ -65,10 +73,12 @@ class BinancePositionProvider(PositionProvider):
                 return
             raise
 
-    async def close_position(self, symbol: str, position_side: PositionSide | None = None) -> None:
+    async def close_position(
+        self, symbol: str, position_side: PositionSide | None = None
+    ) -> Order | None:
         pos = await self.get_position(symbol, position_side)
         if pos is None:
-            return
+            return None
 
         # Cancela ordens condicionais (SL/TP) pendentes antes de fechar —
         # evita órfãs que disparariam contra uma posição já encerrada.
@@ -101,9 +111,38 @@ class BinancePositionProvider(PositionProvider):
             "quantity": str(pos.quantity), "hedge_mode": is_hedge, "reduce_only": reduce_only,
         })
 
-        await self._orders.place_order(OrderRequest(
+        order = await self._orders.place_order(OrderRequest(
             client_order_id=f"close-{uuid4().hex[:16]}",
             symbol=symbol, market_type=MarketType.FUTURES,
             side=side, type=OrderType.MARKET, quantity=pos.quantity,
             reduce_only=reduce_only, position_side=outgoing_side,
         ))
+
+        # MARKET reduce-only pode não trazer `fills` na resposta inicial
+        # (diferente de entradas, que o `ExecutionAgent._wait_for_fill` cobre).
+        # Sem fills anexados, o `RoundTripAgent` nunca é notificado e o
+        # `round_trip` fica OPEN mesmo após a posição fechar. Buscamos via
+        # `/fapi/v1/userTrades`, mesmo padrão do `ExecutionAgent`.
+        if not order.fills:
+            order = await self._poll_fills(order)
+
+        return order
+
+    async def _poll_fills(self, order: Order) -> Order:
+        for attempt in range(settings.order_fill_poll_attempts):
+            await asyncio.sleep(settings.order_fill_poll_interval_s)
+            try:
+                updated = await self._orders.get_order(
+                    order.symbol, order.exchange_order_id, order.market_type,
+                )
+            except Exception:
+                logger.exception(
+                    "positions.fill_poll_failed",
+                    extra={"order_id": order.exchange_order_id, "attempt": attempt},
+                )
+                continue
+            if updated.fills:
+                return updated
+            if updated.status not in (OrderStatus.NEW, OrderStatus.PARTIALLY_FILLED):
+                return updated
+        return order

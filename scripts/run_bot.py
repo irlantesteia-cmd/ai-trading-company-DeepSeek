@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -45,7 +46,8 @@ from app.orchestration.context import AgentContext
 from app.orchestration.orchestrator import Orchestrator
 from app.orchestration.registry import AgentRegistry
 from app.runtime.boot_cleanup import close_all_futures_positions_on_boot
-from app.runtime.evolution import EvolutionLoop, NullChangeGenerator
+from app.runtime.change_generator import HeuristicChangeGenerator
+from app.runtime.evolution import EvolutionLoop
 from app.runtime.heartbeat import HeartbeatMonitor
 from app.runtime.lifecycle import ApplicationLifecycle
 from app.runtime.metrics_collector import MetricsCollector
@@ -54,23 +56,80 @@ from app.strategies import Strategy, make_strategy
 
 logger = logging.getLogger(__name__)
 MODEL_DIR = Path("models")
+EVOLUTION_CONFIG_PATH = Path("config/evolution/thresholds.json")
+
+
+def _load_threshold_overrides() -> dict[str, float] | None:
+    """Lê overrides de threshold ML do arquivo gerenciado pelo EvolutionLoop.
+
+    Retorna `None` se o arquivo não existir ou estiver inválido — nesse caso
+    `_resolve_strategies` cai para os defaults de `settings`.
+
+    Lê com `utf-8-sig` para tolerar BOM (arquivos editados em Windows via
+    `Set-Content -Encoding UTF8` no PowerShell 5.1 ganham BOM).
+    """
+    if not EVOLUTION_CONFIG_PATH.exists():
+        return None
+    try:
+        raw = json.loads(EVOLUTION_CONFIG_PATH.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("boot.evolution_config_read_failed")
+        return None
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return {
+            "long_threshold": float(raw["long_threshold"]),
+            "short_threshold": float(raw["short_threshold"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        logger.warning("boot.evolution_config_invalid", extra={"raw": raw})
+        return None
 
 
 def _resolve_strategies() -> dict[str, Strategy | None]:
+    overrides = _load_threshold_overrides()
+    long_t = (
+        overrides["long_threshold"]
+        if overrides is not None
+        else settings.ml_long_threshold
+    )
+    short_t = (
+        overrides["short_threshold"]
+        if overrides is not None
+        else settings.ml_short_threshold
+    )
+    if overrides is not None:
+        logger.info(
+            "boot.evolution_config_applied",
+            extra={
+                "long_threshold": long_t,
+                "short_threshold": short_t,
+                "source": str(EVOLUTION_CONFIG_PATH),
+            },
+        )
+
     resolved: dict[str, Strategy | None] = {}
     for symbol in settings.trading_symbols:
         spec = settings.strategy_per_symbol.get(symbol, settings.default_strategy)
+        # Cross-asset: só faz sentido para spec "ml" com ref configurado.
+        ref_symbol = settings.ml_cross_asset_ref.get(symbol)
         try:
             resolved[symbol] = make_strategy(
-                spec, symbol=symbol, model_dir=MODEL_DIR,
+                spec,
+                symbol=symbol,
+                model_dir=MODEL_DIR,
                 horizon=settings.ml_horizon,
-                ml_long_threshold=settings.ml_long_threshold,
-                ml_short_threshold=settings.ml_short_threshold,
+                ml_long_threshold=long_t,
+                ml_short_threshold=short_t,
+                ref_symbol=ref_symbol,
+                ref_horizons=settings.ml_cross_asset_ref_horizons,
             )
         except ConfigurationError as exc:
-            logger.error("boot.invalid_strategy_spec", extra={
-                "symbol": symbol, "spec": spec, "error": str(exc),
-            })
+            logger.error(
+                "boot.invalid_strategy_spec",
+                extra={"symbol": symbol, "spec": spec, "error": str(exc)},
+            )
             raise SystemExit(1) from None
     return resolved
 
@@ -102,14 +161,22 @@ async def main() -> None:
         raise SystemExit(1) from None
 
     strategies = _resolve_strategies()
-    logger.info("boot.strategies_resolved", extra={
-        "symbols": settings.trading_symbols,
-        "per_symbol": {s: settings.strategy_per_symbol.get(s, settings.default_strategy)
-                       for s in settings.trading_symbols},
-    })
+    logger.info(
+        "boot.strategies_resolved",
+        extra={
+            "symbols": settings.trading_symbols,
+            "per_symbol": {
+                s: settings.strategy_per_symbol.get(s, settings.default_strategy)
+                for s in settings.trading_symbols
+            },
+            "cross_asset_refs": dict(settings.ml_cross_asset_ref),
+            "cross_asset_horizons": list(settings.ml_cross_asset_ref_horizons),
+        },
+    )
 
     exchange = BinanceAdapter(
-        api_key=settings.binance_api_key, api_secret=settings.binance_api_secret,
+        api_key=settings.binance_api_key,
+        api_secret=settings.binance_api_secret,
         testnet=settings.binance_testnet,
     )
 
@@ -119,7 +186,6 @@ async def main() -> None:
     if loaded == 0:
         logger.warning("boot.symbol_info_empty")
 
-    # Boot cleanup (dev/test): fecha posições residuais antes dos agentes subirem.
     if settings.close_positions_on_boot:
         if settings.binance_api_key and settings.binance_api_secret:
             await close_all_futures_positions_on_boot(exchange)
@@ -131,20 +197,35 @@ async def main() -> None:
     event_bus = EventBus()
     registry = AgentRegistry()
     context = AgentContext(
-        exchange=exchange, event_bus=event_bus, settings=settings,
-        registry=registry, session_factory=AsyncSessionLocal,
+        exchange=exchange,
+        event_bus=event_bus,
+        settings=settings,
+        registry=registry,
+        session_factory=AsyncSessionLocal,
     )
 
     workflows: GitHubWorkflows | None = None
     gh_client: GitHubClient | None = None
     if settings.github_token and settings.github_repo:
-        gh_client = GitHubClient(token=settings.github_token, repo=settings.github_repo,
-                                 base_url=settings.github_api_url)
-        workflows = GitHubWorkflows(client=gh_client, policy=default_policy(),
-                                    enabled=settings.github_autonomy_enabled)
+        gh_client = GitHubClient(
+            token=settings.github_token,
+            repo=settings.github_repo,
+            base_url=settings.github_api_url,
+        )
+        workflows = GitHubWorkflows(
+            client=gh_client,
+            policy=default_policy(),
+            enabled=settings.github_autonomy_enabled,
+        )
 
     heartbeat = HeartbeatMonitor(max_age_seconds=settings.heartbeat_max_age_s)
-    ml_agent = MLAgent(context, model_dir=MODEL_DIR, horizon=settings.ml_horizon)
+    ml_agent = MLAgent(
+        context,
+        model_dir=MODEL_DIR,
+        horizon=settings.ml_horizon,
+        cross_asset_refs=settings.ml_cross_asset_ref,
+        cross_asset_horizons=settings.ml_cross_asset_ref_horizons,
+    )
 
     registry.register(TradingManager(context))
     registry.register(RiskAgent(context))
@@ -154,25 +235,36 @@ async def main() -> None:
     registry.register(RoundTripAgent(context))
     registry.register(TradeRecorderAgent(context))
     registry.register(QAAgent(context))
-    registry.register(EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows))
+    registry.register(
+        EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows)
+    )
     registry.register(ResearchAgent(context, workflows=workflows))
     registry.register(ml_agent)
 
     for symbol in settings.trading_symbols:
-        registry.register(AssetAgent(
-            context, symbol=symbol, market_type=market_type,
-            interval=settings.default_interval, strategy=strategies.get(symbol),
-        ))
+        registry.register(
+            AssetAgent(
+                context,
+                symbol=symbol,
+                market_type=market_type,
+                interval=settings.default_interval,
+                strategy=strategies.get(symbol),
+                ref_symbol=settings.ml_cross_asset_ref.get(symbol),
+            )
+        )
 
     orchestrator = Orchestrator(context, registry)
     health = HealthChecker()
     health.register("exchange.ping", exchange.ping)
-    backfill = HistoryBackfillService(exchange=exchange, session_factory=AsyncSessionLocal)
+    backfill = HistoryBackfillService(
+        exchange=exchange, session_factory=AsyncSessionLocal
+    )
     backfill_first_run_done = asyncio.Event()
 
     async def db_ping_task() -> None:
-        await run_database_ping_loop(event_bus=event_bus,
-                                     interval_seconds=settings.db_ping_interval_s)
+        await run_database_ping_loop(
+            event_bus=event_bus, interval_seconds=settings.db_ping_interval_s
+        )
 
     async def heartbeat_task() -> None:
         while True:
@@ -186,7 +278,9 @@ async def main() -> None:
             report = await health.run()
             for c in report.components:
                 if c.status == "down":
-                    await event_bus.publish(HealthCheckFailed(component=c.name, detail=c.detail))
+                    await event_bus.publish(
+                        HealthCheckFailed(component=c.name, detail=c.detail)
+                    )
             await asyncio.sleep(settings.health_check_interval_s)
 
     async def reconcile_task() -> None:
@@ -195,13 +289,20 @@ async def main() -> None:
             try:
                 report = await reconciler.reconcile(market_type=market_type)
                 if not report.balanced:
-                    await event_bus.publish(HealthCheckFailed(
-                        component="reconciliation",
-                        detail=(f"missing_on_exchange={report.missing_on_exchange} "
-                                f"missing_in_db={report.missing_in_db}"),
-                    ))
+                    await event_bus.publish(
+                        HealthCheckFailed(
+                            component="reconciliation",
+                            detail=(
+                                f"missing_on_exchange={report.missing_on_exchange} "
+                                f"missing_in_db={report.missing_in_db}"
+                            ),
+                        )
+                    )
             except ExchangeAuthError as exc:
-                logger.warning("reconcile.skipped", extra={"reason": "auth", "detail": str(exc)})
+                logger.warning(
+                    "reconcile.skipped",
+                    extra={"reason": "auth", "detail": str(exc)},
+                )
             except Exception:
                 logger.exception("reconcile.failed")
             await asyncio.sleep(settings.reconcile_interval_s)
@@ -212,10 +313,12 @@ async def main() -> None:
                 await backfill.backfill(
                     symbols=list(settings.trading_symbols),
                     interval=settings.default_interval,
-                    market_type=market_type, limit=500,
+                    market_type=market_type,
+                    limit=500,
                 )
             except Exception:
                 logger.exception("backfill.failed")
+
         await _run_once()
         backfill_first_run_done.set()
         while True:
@@ -223,11 +326,17 @@ async def main() -> None:
             await _run_once()
 
     async def candle_stream_task() -> None:
-        streams = [CandleStreamService(
-            exchange=exchange, event_bus=event_bus, symbol=symbol,
-            interval=settings.default_interval, market_type=market_type,
-            poll_interval_s=settings.candle_stream_interval_s,
-        ) for symbol in settings.trading_symbols]
+        streams = [
+            CandleStreamService(
+                exchange=exchange,
+                event_bus=event_bus,
+                symbol=symbol,
+                interval=settings.default_interval,
+                market_type=market_type,
+                poll_interval_s=settings.candle_stream_interval_s,
+            )
+            for symbol in settings.trading_symbols
+        ]
         await asyncio.gather(*(s.run_forever() for s in streams))
 
     async def autotrain_task() -> None:
@@ -236,24 +345,46 @@ async def main() -> None:
         if not symbols:
             logger.info("ml.autotrain_no_symbols")
             return
-        logger.info("ml.autotrain_starting", extra={"symbols": symbols})
+        logger.info(
+            "ml.autotrain_starting",
+            extra={
+                "symbols": symbols,
+                "cross_asset_refs": {
+                    s: settings.ml_cross_asset_ref.get(s) for s in symbols
+                },
+            },
+        )
         try:
-            await autotrain_all(ml_agent=ml_agent, symbols=symbols,
-                                market_type=market_type,
-                                interval=settings.default_interval,
-                                limit=settings.ml_autotrain_limit)
+            await autotrain_all(
+                ml_agent=ml_agent,
+                symbols=symbols,
+                market_type=market_type,
+                interval=settings.default_interval,
+                limit=settings.ml_autotrain_limit,
+            )
         except Exception:
             logger.exception("ml.autotrain_failed")
 
     async def evolution_task() -> None:
-        collector = MetricsCollector(session_factory=AsyncSessionLocal, lookback_hours=24)
+        if workflows is None:
+            logger.warning("evolution.no_workflows_configured")
+            return
+
+        collector = MetricsCollector(
+            session_factory=AsyncSessionLocal, lookback_hours=24
+        )
 
         async def metrics_provider() -> dict[str, float]:
             return (await collector.collect()).as_dict()
 
+        change_generator = HeuristicChangeGenerator(
+            config_path=EVOLUTION_CONFIG_PATH,
+            repo_path="config/evolution/thresholds.json",
+        )
         loop = EvolutionLoop(
-            workflows=workflows, metrics_provider=metrics_provider,
-            change_generator=NullChangeGenerator(),
+            workflows=workflows,
+            metrics_provider=metrics_provider,
+            change_generator=change_generator,
             interval_seconds=settings.evolution_interval_s,
             cooldown_seconds=settings.evolution_cooldown_s,
         )
@@ -267,19 +398,24 @@ async def main() -> None:
             return
         if not order.fills or order.average_price is None:
             return
-        await event_bus.publish(OrderFilled(
-            exchange_order_id=order.exchange_order_id,
-            symbol=order.symbol,
-            filled_quantity=float(order.executed_quantity),
-            average_price=float(order.average_price),
-            order=order,
-        ))
-        logger.info("user_stream.order_filled", extra={
-            "order_id": order.exchange_order_id,
-            "symbol": order.symbol,
-            "status": order.status.value,
-            "num_fills": len(order.fills),
-        })
+        await event_bus.publish(
+            OrderFilled(
+                exchange_order_id=order.exchange_order_id,
+                symbol=order.symbol,
+                filled_quantity=float(order.executed_quantity),
+                average_price=float(order.average_price),
+                order=order,
+            )
+        )
+        logger.info(
+            "user_stream.order_filled",
+            extra={
+                "order_id": order.exchange_order_id,
+                "symbol": order.symbol,
+                "status": order.status.value,
+                "num_fills": len(order.fills),
+            },
+        )
 
     async def user_stream_task() -> None:
         if not (settings.binance_api_key and settings.binance_api_secret):
@@ -304,20 +440,27 @@ async def main() -> None:
 
     if settings.candle_stream_enabled:
         tasks.append(candle_stream_task)
-        logger.info("candle_stream.enabled", extra={
-            "symbols": list(settings.trading_symbols),
-            "interval": settings.default_interval,
-            "poll_interval_s": settings.candle_stream_interval_s,
-        })
+        logger.info(
+            "candle_stream.enabled",
+            extra={
+                "symbols": list(settings.trading_symbols),
+                "interval": settings.default_interval,
+                "poll_interval_s": settings.candle_stream_interval_s,
+            },
+        )
     else:
         logger.info("candle_stream.disabled")
 
     if settings.ml_autotrain_on_boot:
         tasks.append(autotrain_task)
-        logger.info("ml.autotrain_enabled", extra={
-            "symbols": settings.ml_autotrain_symbols or list(settings.trading_symbols),
-            "limit": settings.ml_autotrain_limit,
-        })
+        logger.info(
+            "ml.autotrain_enabled",
+            extra={
+                "symbols": settings.ml_autotrain_symbols
+                or list(settings.trading_symbols),
+                "limit": settings.ml_autotrain_limit,
+            },
+        )
     else:
         logger.info("ml.autotrain_disabled")
 
