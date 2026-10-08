@@ -11,14 +11,13 @@ from app.database.repositories.base import BaseRepository
 class CandleRepository(BaseRepository[CandleORM]):
     model = CandleORM
 
-    async def bulk_insert_ignore_conflicts(
-        self, rows: list[dict]
-    ) -> int:
-        """Insere em lote; no conflito atualiza OHLCV e taker_buy.
+    async def bulk_upsert(self, rows: list[dict]) -> int:
+        """Upsert em lote: insere ou, no conflito, atualiza OHLCV e taker_buy.
 
         Retorna o rowcount do statement (inserts + updates). Idempotente
-        para a chave única; a 2ª chamada preenche `taker_buy_base_volume`
-        em candles que existiam antes da migration 0004.
+        para a chave única. Reingerir re-preenche `taker_buy_base_volume`
+        em candles anteriores à migration 0004 e corrige candles que tenham
+        sido gravados parciais num backfill anterior.
         """
         if not rows:
             return 0

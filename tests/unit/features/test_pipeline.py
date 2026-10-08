@@ -69,8 +69,8 @@ def test_pipeline_taker_buy_uses_volume_ratio():
     candles = [
         c.model_copy(
             update={
-                "volume": Decimal("10"),
-                "taker_buy_base_volume": Decimal("2"),
+                "volume": Decimal(10),
+                "taker_buy_base_volume": Decimal(2),
             }
         )
         for c in candles

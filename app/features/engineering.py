@@ -64,10 +64,10 @@ def rsi(closes: Sequence[float], period: int = 14) -> list[float | None]:
     avg_gain = sum(gains[1 : period + 1]) / period
     avg_loss = sum(losses[1 : period + 1]) / period
 
-    def _rsi(g: float, l: float) -> float:
-        if l == 0:
+    def _rsi(gain: float, loss: float) -> float:
+        if loss == 0:
             return 100.0
-        rs = g / l
+        rs = gain / loss
         return 100.0 - 100.0 / (1.0 + rs)
 
     out[period] = _rsi(avg_gain, avg_loss)

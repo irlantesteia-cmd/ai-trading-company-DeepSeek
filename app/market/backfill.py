@@ -126,7 +126,7 @@ class HistoryBackfillService:
 
         async with self._session_factory() as session:
             repo = CandleRepository(session)
-            persisted = await repo.bulk_insert_ignore_conflicts(rows)
+            persisted = await repo.bulk_upsert(rows)
             await session.commit()
 
         logger.info(
