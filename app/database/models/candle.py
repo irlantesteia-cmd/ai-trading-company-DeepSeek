@@ -11,7 +11,7 @@ class CandleORM(Base, TimestampMixin):
     """Candle persistido para backtest e treino de modelos ML.
 
     Chave de unicidade: (symbol, market_type, interval, open_time).
-    Reingestão é idempotente via `ON CONFLICT DO NOTHING` feito pelo repositório.
+    Reingestão é idempotente via `ON CONFLICT DO UPDATE` (OHLCV + taker_buy).
     """
 
     __tablename__ = "candles"
@@ -44,3 +44,6 @@ class CandleORM(Base, TimestampMixin):
     close: Mapped[Decimal] = mapped_column(Numeric(28, 12))
     volume: Mapped[Decimal] = mapped_column(Numeric(28, 12))
     trades: Mapped[int] = mapped_column()
+    taker_buy_base_volume: Mapped[Decimal | None] = mapped_column(
+        Numeric(28, 12), nullable=True
+    )

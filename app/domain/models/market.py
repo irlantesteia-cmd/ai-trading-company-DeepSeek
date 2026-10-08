@@ -28,6 +28,8 @@ class Candle(DomainModel):
     close: Decimal
     volume: Decimal
     trades: int
+    # Coluna 9 de /fapi/v1/klines. None em candles antigos (pré-migration 0004).
+    taker_buy_base_volume: Decimal | None = None
     closed: bool = True
 
 

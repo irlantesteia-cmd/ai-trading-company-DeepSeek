@@ -135,6 +135,32 @@ def high_low_range(
     return out
 
 
+def taker_buy_ratio(
+    volumes: Sequence[float],
+    taker_buys: Sequence[float | None],
+) -> list[float | None]:
+    """Fração do volume agressor (taker buy) no candle: taker_buy / volume.
+
+    Causal no mesmo candle fechado. `None` se volume <= 0 ou taker ausente.
+    Valores fora de [0, 1] (arredondamento da exchange) são clipados.
+    """
+    if len(volumes) != len(taker_buys):
+        raise ValueError("volumes e taker_buys devem ter o mesmo comprimento")
+    out: list[float | None] = [None] * len(volumes)
+    for i, vol in enumerate(volumes):
+        tb = taker_buys[i]
+        if tb is None or vol <= 0:
+            continue
+        ratio = tb / vol
+        if ratio < 0.0:
+            out[i] = 0.0
+        elif ratio > 1.0:
+            out[i] = 1.0
+        else:
+            out[i] = ratio
+    return out
+
+
 def body_ratio(
     opens: Sequence[float],
     highs: Sequence[float],

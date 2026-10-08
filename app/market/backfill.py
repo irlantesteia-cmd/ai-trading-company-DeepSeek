@@ -119,6 +119,7 @@ class HistoryBackfillService:
                 "close": c.close,
                 "volume": c.volume,
                 "trades": c.trades,
+                "taker_buy_base_volume": c.taker_buy_base_volume,
             }
             for c in candles
         ]

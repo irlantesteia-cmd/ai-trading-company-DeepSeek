@@ -209,6 +209,7 @@ class MLAgent(BaseAgent):
                 close=r.close,
                 volume=r.volume,
                 trades=r.trades,
+                taker_buy_base_volume=r.taker_buy_base_volume,
                 closed=True,
             )
             for r in rows

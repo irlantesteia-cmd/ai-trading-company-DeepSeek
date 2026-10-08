@@ -14,6 +14,7 @@ from app.features.engineering import (
     ema_distance,
     return_n,
     rsi,
+    taker_buy_ratio,
     volatility,
     volume_zscore,
 )
@@ -99,8 +100,13 @@ def default_pipeline(
     atr_period: int = 14,
     vol_period: int = 20,
     volume_period: int = 20,
+    include_taker_buy: bool = False,
 ) -> FeaturePipeline:
-    """Conjunto padrão de 8 features, todas causalmente válidas."""
+    """Conjunto padrão de 8 features (9 com `include_taker_buy=True`).
+
+    Produção permanece em 8 até ML-3d-2 ser medido com n_train >= 5000.
+    O spike `experiment_horizon.py` liga a 9ª feature explicitamente.
+    """
     # `ema_fast` aceito mas ignorado desde ML-3a (redundante com ema_slow).
     del ema_fast
 
@@ -138,6 +144,15 @@ def default_pipeline(
             [float(x.close) for x in c],
         )
 
+    def _taker_buy(c: list[Candle]) -> list[float | None]:
+        return taker_buy_ratio(
+            [float(x.volume) for x in c],
+            [
+                None if x.taker_buy_base_volume is None else float(x.taker_buy_base_volume)
+                for x in c
+            ],
+        )
+
     features: list[tuple[str, FeatureFn]] = [
         ("return_1", _return_1),
         ("return_10", _return_10),
@@ -148,4 +163,6 @@ def default_pipeline(
         (f"atr_norm_{atr_period}", _atr_norm),
         ("body_ratio", _body),
     ]
+    if include_taker_buy:
+        features.append(("taker_buy_ratio", _taker_buy))
     return FeaturePipeline(features)

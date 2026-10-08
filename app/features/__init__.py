@@ -6,6 +6,7 @@ from app.features.engineering import (
     log_return,
     return_n,
     rsi,
+    taker_buy_ratio,
     volatility,
     volume_zscore,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "log_return",
     "return_n",
     "rsi",
+    "taker_buy_ratio",
     "volatility",
     "volume_zscore",
 ]
