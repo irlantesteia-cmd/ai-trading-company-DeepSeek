@@ -30,8 +30,14 @@ class PositionProvider(ABC):
         self,
         symbol: str,
         position_side: PositionSide | None = None,
+        *,
+        client_order_prefix: str = "close",
     ) -> Order | None:
         """Fecha a posição e retorna a `Order` de fechamento (com fills).
+
+        `client_order_prefix` identifica o motivo no `clientOrderId`
+        (`close-` = manual, `tx-` = saída por tempo; ver
+        `CloseReason.from_client_order_id`).
 
         Retorna `None` se não havia posição aberta. O `Order` retornado
         carrega os fills já anexados (via `/fapi/v1/userTrades`), para que

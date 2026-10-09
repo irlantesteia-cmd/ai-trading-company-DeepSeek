@@ -74,7 +74,11 @@ class BinancePositionProvider(PositionProvider):
             raise
 
     async def close_position(
-        self, symbol: str, position_side: PositionSide | None = None
+        self,
+        symbol: str,
+        position_side: PositionSide | None = None,
+        *,
+        client_order_prefix: str = "close",
     ) -> Order | None:
         pos = await self.get_position(symbol, position_side)
         if pos is None:
@@ -112,7 +116,7 @@ class BinancePositionProvider(PositionProvider):
         })
 
         order = await self._orders.place_order(OrderRequest(
-            client_order_id=f"close-{uuid4().hex[:16]}",
+            client_order_id=f"{client_order_prefix}-{uuid4().hex[:16]}",
             symbol=symbol, market_type=MarketType.FUTURES,
             side=side, type=OrderType.MARKET, quantity=pos.quantity,
             reduce_only=reduce_only, position_side=outgoing_side,

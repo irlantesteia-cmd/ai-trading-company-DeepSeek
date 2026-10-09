@@ -92,7 +92,21 @@ class CloseReason(StrEnum):
     STOP_LOSS = "STOP_LOSS"
     TAKE_PROFIT = "TAKE_PROFIT"
     MANUAL = "MANUAL"
+    TIME_EXIT = "TIME_EXIT"
     UNKNOWN = "UNKNOWN"
+
+    @classmethod
+    def from_client_order_id(cls, client_order_id: str) -> "CloseReason":
+        """Motivo do fechamento pelo prefixo do `clientOrderId` da ordem de saída."""
+        if client_order_id.startswith("sl-"):
+            return cls.STOP_LOSS
+        if client_order_id.startswith("tp-"):
+            return cls.TAKE_PROFIT
+        if client_order_id.startswith("tx-"):
+            return cls.TIME_EXIT
+        if client_order_id.startswith("close-"):
+            return cls.MANUAL
+        return cls.UNKNOWN
 
 
 class TradeRole(StrEnum):
