@@ -75,6 +75,10 @@ docker compose logs -f app
 docker compose --profile bot stop app
 ```
 
+Se o processo do bot cair com erro, o Docker o reinicia (até 5 vezes). Ele
+**não** é religado ao iniciar o Docker ou depois de um reboot do PC: suba de
+novo com o comando acima. Os logs do container giram em 5 arquivos de 20 MB.
+
 ### Grafana
 
 ```powershell
