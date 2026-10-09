@@ -31,3 +31,13 @@ class SignalORM(Base, TimestampMixin):
     agent: Mapped[str] = mapped_column(String(64), index=True)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Decisão do TradingManager: APPROVED / REJECTED / IGNORED (None = pendente).
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_quantity: Mapped[Decimal | None] = mapped_column(
+        Numeric(28, 12), nullable=True
+    )
+    # Ordem gerada pelo sinal (junção com `orders.client_order_id`).
+    client_order_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )

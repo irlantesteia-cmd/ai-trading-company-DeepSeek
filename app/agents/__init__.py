@@ -9,6 +9,7 @@ from app.agents.qa import QAAgent
 from app.agents.research import ResearchAgent
 from app.agents.risk import RiskAgent
 from app.agents.round_trip import RoundTripAgent
+from app.agents.signal_recorder import SignalRecorderAgent
 from app.agents.trade_recorder import TradeRecorderAgent
 from app.agents.trading_manager import TradingManager
 
@@ -24,6 +25,7 @@ __all__ = [
     "ResearchAgent",
     "RiskAgent",
     "RoundTripAgent",
+    "SignalRecorderAgent",
     "TradeRecorderAgent",
     "TradingManager",
 ]

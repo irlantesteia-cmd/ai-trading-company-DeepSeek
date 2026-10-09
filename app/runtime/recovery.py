@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.enums import MarketType
 from app.database.models.order import OrderORM
+from app.database.models.reconciliation_run import ReconciliationRunORM
+from app.database.repositories.reconciliation_run import ReconciliationRunRepository
 from app.domain.models.order import Order
 from app.exchanges.base.exchange import Exchange
 from app.runtime.order_recorder import OrderRecorder
@@ -69,10 +71,13 @@ class Reconciler:
         exchange: Exchange,
         session_factory: async_sessionmaker,
         recorder: OrderRecorder | None = None,
+        record_runs: bool = False,
     ) -> None:
+        """`record_runs`: grava cada execução em `reconciliation_runs`."""
         self._exchange = exchange
         self._session_factory = session_factory
         self._recorder = recorder
+        self._record_runs = record_runs
 
     async def reconcile(
         self,
@@ -117,7 +122,32 @@ class Reconciler:
         report.balanced = not report.unresolved
         if report.missing_on_exchange or report.missing_in_db:
             logger.warning("reconcile.divergence", extra=report.as_dict())
+        if self._record_runs:
+            await self._persist_run(report, market_type=market_type)
         return report
+
+    async def _persist_run(
+        self, report: ReconciliationReport, *, market_type: MarketType
+    ) -> None:
+        """Histórico para o Grafana. Falha é logada, nunca propagada."""
+        try:
+            async with self._session_factory() as session:
+                await ReconciliationRunRepository(session).add(
+                    ReconciliationRunORM(
+                        checked_at=report.checked_at,
+                        market_type=market_type.value,
+                        db_open=len(report.db_open_orders),
+                        exchange_open=len(report.exchange_open_orders),
+                        missing_on_exchange=report.missing_on_exchange,
+                        missing_in_db=report.missing_in_db,
+                        synced=report.synced,
+                        unresolved=report.unresolved,
+                        balanced=report.balanced,
+                    )
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("reconcile.persist_run_failed")
 
     async def _sync_final_status(
         self, key: _OrderKey, *, symbol: str, market_type: MarketType

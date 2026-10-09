@@ -260,3 +260,72 @@ async def test_spot_does_not_query_conditional_orders():
         market_type=MarketType.SPOT
     )
     exchange.orders.list_open_conditional_orders.assert_not_awaited()
+
+
+# ------------------------------------------- histórico (reconciliation_runs)
+class _RunSession(_FakeSession):
+    def __init__(self, rows, added: list, *, fail: bool = False) -> None:
+        super().__init__(rows)
+        self._added = added
+        self._fail = fail
+
+    def add(self, obj) -> None:
+        if self._fail:
+            raise RuntimeError("db down")
+        self._added.append(obj)
+
+    async def flush(self) -> None:
+        pass
+
+    async def commit(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_record_runs_persists_report():
+    added: list = []
+    exchange = _exchange()
+    exchange.orders.list_open_orders = AsyncMock(return_value=[_order("2")])
+    recorder = _Recorder()
+
+    r = Reconciler(
+        exchange=exchange,
+        session_factory=lambda: _RunSession([_Row("1")], added),
+        recorder=recorder,
+        record_runs=True,
+    )
+    exchange.orders.get_order = AsyncMock(return_value=_final("1", OrderStatus.FILLED))
+    report = await r.reconcile()
+
+    (run,) = added
+    assert run.market_type == "FUTURES"
+    assert run.db_open == 1 and run.exchange_open == 1
+    assert run.missing_on_exchange == ["1"]
+    assert run.missing_in_db == ["2"]
+    assert run.synced == ["1", "2"]
+    assert run.unresolved == []
+    assert run.balanced is True
+    assert run.checked_at == report.checked_at
+
+
+@pytest.mark.asyncio
+async def test_record_runs_failure_does_not_break_reconcile(caplog):
+    exchange = _exchange()
+    exchange.orders.list_open_orders = AsyncMock(return_value=[])
+    r = Reconciler(
+        exchange=exchange,
+        session_factory=lambda: _RunSession([], [], fail=True),
+        record_runs=True,
+    )
+    report = await r.reconcile()
+    assert report.balanced is True
+    assert "reconcile.persist_run_failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_runs_not_recorded_by_default():
+    added: list = []
+    exchange = _exchange()
+    exchange.orders.list_open_orders = AsyncMock(return_value=[])
+    await Reconciler(exchange=exchange, session_factory=lambda: _RunSession([], added)).reconcile()
+    assert added == []

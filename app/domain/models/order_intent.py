@@ -23,3 +23,12 @@ class OrderIntent(DomainModel):
     take_profit: Decimal | None = None
     reason: str = ""
     agent: str = ""
+
+    @property
+    def client_order_id(self) -> str:
+        """`clientOrderId` da ordem de entrada (liga `signals` a `orders`)."""
+        return client_order_id_for_intent(self.intent_id)
+
+
+def client_order_id_for_intent(intent_id: str) -> str:
+    return f"ai-{intent_id[:24]}"
