@@ -207,13 +207,7 @@ class RoundTripAgent(BaseAgent):
 
     @staticmethod
     def _reason_from_client_order_id(client_order_id: str) -> CloseReason:
-        if client_order_id.startswith("sl-"):
-            return CloseReason.STOP_LOSS
-        if client_order_id.startswith("tp-"):
-            return CloseReason.TAKE_PROFIT
-        if client_order_id.startswith("close-"):
-            return CloseReason.MANUAL
-        return CloseReason.UNKNOWN
+        return CloseReason.from_client_order_id(client_order_id)
 
     @staticmethod
     def _is_same_side(position_side: str, order_side: str) -> bool:

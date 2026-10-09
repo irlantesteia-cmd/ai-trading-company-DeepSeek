@@ -52,13 +52,7 @@ def _dec(v) -> Decimal:
 
 
 def _reason_from_client_order_id(client_order_id: str) -> CloseReason:
-    if client_order_id.startswith("sl-"):
-        return CloseReason.STOP_LOSS
-    if client_order_id.startswith("tp-"):
-        return CloseReason.TAKE_PROFIT
-    if client_order_id.startswith("close-"):
-        return CloseReason.MANUAL
-    return CloseReason.UNKNOWN
+    return CloseReason.from_client_order_id(client_order_id)
 
 
 def _compute_pnl(

@@ -55,6 +55,7 @@ from app.runtime.lifecycle import ApplicationLifecycle
 from app.runtime.metrics_collector import MetricsCollector
 from app.runtime.order_recorder import OrderRecorder, RecordingOrderProvider
 from app.runtime.recovery import Reconciler
+from app.runtime.time_exit import TimeExitMonitor
 from app.runtime.user_stream_handler import handle_user_stream_event
 from app.strategies import Strategy, make_strategy
 
@@ -472,6 +473,22 @@ async def main() -> None:
         logger.info("reconcile.enabled")
     else:
         logger.warning("reconcile.disabled")
+
+    if settings.position_max_holding_minutes > 0 and settings.binance_api_key:
+        time_exit = TimeExitMonitor(
+            exchange=exchange,
+            event_bus=event_bus,
+            session_factory=AsyncSessionLocal,
+            max_holding_minutes=settings.position_max_holding_minutes,
+            check_interval_s=settings.time_exit_check_interval_s,
+        )
+        tasks.append(time_exit.run_forever)
+        logger.info(
+            "time_exit.enabled",
+            extra={"max_holding_minutes": settings.position_max_holding_minutes},
+        )
+    else:
+        logger.info("time_exit.disabled")
 
     if settings.user_stream_enabled:
         tasks.append(user_stream_task)

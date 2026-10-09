@@ -130,6 +130,10 @@ class Settings(BaseSettings):
     heartbeat_interval_s: float = 30.0
     health_check_interval_s: float = 60.0
     reconcile_interval_s: float = 300.0
+    # Saída por tempo: fecha posições abertas há mais que isto (minutos).
+    # 0 desliga. Verificação a cada `time_exit_check_interval_s`.
+    position_max_holding_minutes: float = 0.0
+    time_exit_check_interval_s: float = 60.0
     evolution_interval_s: float = 3600.0
     evolution_cooldown_s: float = 86400.0
 
