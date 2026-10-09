@@ -43,7 +43,10 @@ from app.monitoring.health import HealthChecker
 from app.orchestration.context import AgentContext
 from app.orchestration.orchestrator import Orchestrator
 from app.orchestration.registry import AgentRegistry
-from app.runtime.boot_cleanup import close_all_futures_positions_on_boot
+from app.runtime.boot_cleanup import (
+    cancel_orphan_conditional_orders_on_boot,
+    close_all_futures_positions_on_boot,
+)
 from app.runtime.change_generator import HeuristicChangeGenerator
 from app.runtime.evolution import EvolutionLoop
 from app.runtime.heartbeat import HeartbeatMonitor
@@ -196,6 +199,21 @@ async def main() -> None:
             logger.warning("boot_cleanup.skipped_no_credentials")
     else:
         logger.info("boot_cleanup.disabled")
+
+    # Órfãs (SL/TP sem posição) são canceladas sempre, mesmo sem fechar
+    # posições no boot. A reconciliação em seguida grava o CANCELED em `orders`.
+    if settings.binance_api_key and settings.binance_api_secret:
+        orphans = await cancel_orphan_conditional_orders_on_boot(exchange)
+        if orphans:
+            try:
+                await Reconciler(
+                    exchange=exchange,
+                    session_factory=AsyncSessionLocal,
+                    recorder=order_recorder,
+                ).reconcile(market_type=market_type)
+            except Exception:
+                # O reconcile_task periódico corrige depois; o boot segue.
+                logger.exception("boot_cleanup.reconcile_failed")
 
     event_bus = EventBus()
     registry = AgentRegistry()
