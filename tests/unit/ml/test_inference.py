@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 
 from app.core.enums import MarketType, SignalDirection
+from app.domain.models.strategy_context import StrategyContext
 from app.features.pipeline import default_pipeline
 from app.ml.inference import MLSignalGenerator
-from app.strategies.context import StrategyContext
 from tests.unit.strategies.conftest import make_candles
 
 

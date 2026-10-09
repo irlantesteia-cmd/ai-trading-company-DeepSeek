@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from math import log
 
-from app.strategies.indicators import ema, rolling_std
+from app.core.indicators import atr, ema, rolling_std
 
 
 def return_n(closes: Sequence[float], n: int) -> list[float | None]:
@@ -112,8 +112,6 @@ def atr_normalized(
     period: int = 14,
 ) -> list[float | None]:
     """ATR(period) / close[i]."""
-    from app.strategies.indicators import atr  # evita import circular na carga do módulo
-
     a = atr(highs, lows, closes, period)
     out: list[float | None] = [None] * len(closes)
     for i in range(len(closes)):

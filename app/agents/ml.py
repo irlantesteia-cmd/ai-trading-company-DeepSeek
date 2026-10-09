@@ -9,6 +9,7 @@ from app.core.enums import AgentRole, MarketType
 from app.database.repositories.candle import CandleRepository
 from app.domain.models.market import Candle
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.features.cross_asset import CrossAssetPipeline
 from app.features.pipeline import FeaturePipeline, FeatureTransformer, default_pipeline
 from app.ml.dataset import build_dataset
@@ -19,7 +20,6 @@ from app.ml.training import (
     save_training_result,
     train_walk_forward,
 )
-from app.strategies.context import StrategyContext
 
 logger = logging.getLogger(__name__)
 

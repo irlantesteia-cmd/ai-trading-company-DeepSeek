@@ -35,11 +35,11 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.features.pipeline import FeatureTransformer, default_pipeline
 from app.ml.inference import MLSignalGenerator
 from app.ml.model import ForwardReturnClassifier
 from app.strategies.base import Strategy
-from app.strategies.context import StrategyContext
 
 logger = logging.getLogger(__name__)
 

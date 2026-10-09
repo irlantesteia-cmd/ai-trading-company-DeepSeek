@@ -8,8 +8,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app.core.enums import MarketType
+from app.domain.models.strategy_context import StrategyContext
 from app.features.pipeline import default_pipeline
-from app.strategies.context import StrategyContext
 from app.strategies.ml_strategy import MLStrategy
 from tests.unit.strategies.conftest import make_candles
 

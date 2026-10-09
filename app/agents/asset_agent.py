@@ -13,9 +13,9 @@ from app.core.enums import (
 )
 from app.domain.models.market import Candle
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.events.event import CandleClosed, Event, SignalGenerated
 from app.strategies.base import Strategy
-from app.strategies.context import StrategyContext
 
 logger = logging.getLogger(__name__)
 

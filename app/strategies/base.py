@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from app.domain.models.signal import Signal
-from app.strategies.context import StrategyContext
+from app.domain.models.strategy_context import StrategyContext
 
 
 class Strategy(ABC):
