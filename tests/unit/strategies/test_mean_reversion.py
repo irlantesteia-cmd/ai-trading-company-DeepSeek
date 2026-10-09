@@ -1,7 +1,7 @@
 import pytest
 
 from app.core.enums import MarketType, SignalDirection
-from app.strategies.context import StrategyContext
+from app.domain.models.strategy_context import StrategyContext
 from app.strategies.mean_reversion import MeanReversionStrategy
 from tests.unit.strategies.conftest import make_candles
 

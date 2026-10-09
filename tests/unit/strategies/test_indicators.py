@@ -1,6 +1,6 @@
 import pytest
 
-from app.strategies.indicators import adx, atr, ema, rolling_std, sma, zscore
+from app.core.indicators import adx, atr, ema, rolling_std, sma, zscore
 
 
 def test_sma_basic():

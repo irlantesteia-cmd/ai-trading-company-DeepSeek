@@ -5,10 +5,10 @@ from decimal import Decimal
 from uuid import uuid4
 
 from app.core.enums import MarketRegime, SignalDirection
+from app.core.indicators import adx, atr, ema
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.strategies.base import Strategy
-from app.strategies.context import StrategyContext
-from app.strategies.indicators import adx, atr, ema
 
 
 class MomentumStrategy(Strategy):

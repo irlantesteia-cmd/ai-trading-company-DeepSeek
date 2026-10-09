@@ -5,10 +5,11 @@ from decimal import Decimal
 from uuid import uuid4
 
 from app.core.enums import MarketRegime, SignalDirection
+from app.core.indicators import atr
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.features.pipeline import FeatureTransformer
 from app.ml.model import ForwardReturnClassifier
-from app.strategies.context import StrategyContext
 
 
 class MLSignalGenerator:
@@ -97,8 +98,6 @@ class MLSignalGenerator:
 
     @staticmethod
     def _compute_last_atr(ctx: StrategyContext) -> Decimal:
-        from app.strategies.indicators import atr
-
         highs = [float(c.high) for c in ctx.candles]
         lows = [float(c.low) for c in ctx.candles]
         closes = [float(c.close) for c in ctx.candles]

@@ -7,6 +7,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 
+from app.domain.models.strategy_context import StrategyContext
 from app.features.pipeline import default_pipeline
 from app.ml.dataset import Dataset, build_dataset
 from app.ml.model import ForwardReturnClassifier, ModelMetadata
@@ -15,7 +16,6 @@ from app.ml.training import (
     save_training_result,
     train_classifier,
 )
-from app.strategies.context import StrategyContext
 from app.strategies.ml_strategy import MLStrategy
 from tests.unit.strategies.conftest import make_candles
 

@@ -7,9 +7,9 @@ import pytest
 from app.agents.asset_agent import AssetAgent
 from app.core.enums import MarketType, SignalDirection
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.events.event import SignalGenerated
 from app.strategies.base import Strategy
-from app.strategies.context import StrategyContext
 from tests.unit.strategies.conftest import make_candles
 
 
