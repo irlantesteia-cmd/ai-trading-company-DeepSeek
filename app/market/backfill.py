@@ -103,6 +103,8 @@ class HistoryBackfillService:
             market_type=market_type,
             limit=limit,
         )
+        # A barra em andamento (último item do REST) tem OHLCV parcial.
+        candles = [c for c in candles if c.closed]
         if not candles:
             return {"fetched": 0, "persisted": 0}
 

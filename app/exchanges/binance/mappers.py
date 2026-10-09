@@ -108,14 +108,27 @@ def _taker_buy_from_kline_event(k: dict) -> Decimal | None:
     return _dec(raw)
 
 
-def map_kline(raw: list, market_type: MarketType, symbol: str, interval: str) -> Candle:
+def map_kline(
+    raw: list,
+    market_type: MarketType,
+    symbol: str,
+    interval: str,
+    *,
+    now: datetime | None = None,
+) -> Candle:
+    """Kline REST → Candle.
+
+    O REST devolve o candle em andamento como último item, com `close_time`
+    no futuro. `closed` reflete isso: `close_time <= now` (default: agora).
+    """
+    close_time = _dt_ms(raw[6])
     return Candle(
         symbol=symbol, market_type=market_type, interval=interval,
-        open_time=_dt_ms(raw[0]), close_time=_dt_ms(raw[6]),
+        open_time=_dt_ms(raw[0]), close_time=close_time,
         open=_dec(raw[1]), high=_dec(raw[2]), low=_dec(raw[3]), close=_dec(raw[4]),
         volume=_dec(raw[5]), trades=int(raw[8]) if len(raw) > 8 else 0,
         taker_buy_base_volume=_taker_buy_from_kline(raw),
-        closed=True,
+        closed=close_time <= (now or datetime.now(UTC)),
     )
 
 

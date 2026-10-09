@@ -111,3 +111,30 @@ async def test_tick_publishes_signal_from_strategy(context):
     assert len(received) == 1
     assert received[0].symbol == "BTCUSDT"
     assert received[0].direction == "LONG"
+
+@pytest.mark.asyncio
+async def test_agent_ignores_in_progress_candle(context):
+    from unittest.mock import AsyncMock
+
+    closed = make_candles([100.0, 101.0, 102.0, 103.0])
+    in_progress = closed[-1].model_copy(
+        update={
+            "open_time": closed[-1].close_time,
+            "close_time": closed[-1].close_time + (closed[-1].close_time - closed[-1].open_time),
+            "close": Decimal(999),
+            "closed": False,
+        }
+    )
+    context.exchange.market_data.get_candles = AsyncMock(return_value=[*closed, in_progress])
+    agent = AssetAgent(
+        context,
+        symbol="BTCUSDT",
+        market_type=MarketType.FUTURES,
+        interval="5m",
+        strategy=_AlwaysLong(),
+    )
+
+    signal = await agent.analyze()
+
+    assert signal is not None
+    assert signal.suggested_entry == closed[-1].close
