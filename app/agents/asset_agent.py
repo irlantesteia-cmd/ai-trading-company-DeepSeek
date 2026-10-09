@@ -89,12 +89,15 @@ class AssetAgent(BaseAgent):
         return await self._fetch_candles_for(self.symbol)
 
     async def _fetch_candles_for(self, symbol: str) -> list[Candle]:
-        return await self.context.exchange.market_data.get_candles(
+        """Candles fechados apenas: o REST inclui a barra em andamento no fim,
+        e o modelo foi treinado só com barras fechadas."""
+        candles = await self.context.exchange.market_data.get_candles(
             symbol,
             self.interval,
             self.market_type,
             limit=self.lookback,
         )
+        return [c for c in candles if c.closed]
 
     # ------------------------------------------------------ subscriptions
     def subscriptions(self) -> dict[type[Event], EventHandler]:

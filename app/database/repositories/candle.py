@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.enums import MarketType
@@ -33,6 +33,8 @@ class CandleRepository(BaseRepository[CandleORM]):
                 "volume": stmt.excluded.volume,
                 "trades": stmt.excluded.trades,
                 "taker_buy_base_volume": stmt.excluded.taker_buy_base_volume,
+                # `onupdate` do ORM não se aplica a ON CONFLICT DO UPDATE.
+                "updated_at": func.now(),
             },
         )
         result = await self.session.execute(stmt)
@@ -61,6 +63,23 @@ class CandleRepository(BaseRepository[CandleORM]):
         rows = list((await self.session.execute(stmt)).scalars().all())
         rows.reverse()
         return rows
+
+    async def list_persisted_while_open(self) -> list[CandleORM]:
+        """Candles gravados antes do próprio fechamento e nunca regravados.
+
+        São barras em andamento que o backfill persistiu com OHLCV parcial
+        (antes da correção do `map_kline`). Depois de regravadas pelo
+        `bulk_upsert`, `updated_at` passa de `close_time` e saem da lista.
+        """
+        stmt = (
+            select(CandleORM)
+            .where(
+                CandleORM.created_at < CandleORM.close_time,
+                CandleORM.updated_at < CandleORM.close_time,
+            )
+            .order_by(CandleORM.symbol, CandleORM.open_time)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
 
     async def count_for(
         self,

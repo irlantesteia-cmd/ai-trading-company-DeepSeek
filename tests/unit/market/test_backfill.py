@@ -150,3 +150,29 @@ async def test_backfill_report_duplicates_skipped():
         symbols_processed=1, candles_fetched=10, candles_persisted=7
     )
     assert report.duplicates_skipped == 3
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_in_progress_candle(monkeypatch):
+    candles = _candles("BTCUSDT", 4)
+    candles[-1] = candles[-1].model_copy(update={"closed": False})
+    service, _ = _service({"BTCUSDT": candles})
+
+    captured: list[list[dict]] = []
+
+    async def _fake_upsert(self, rows):
+        captured.append(rows)
+        return len(rows)
+
+    monkeypatch.setattr(
+        "app.market.backfill.CandleRepository.bulk_upsert", _fake_upsert
+    )
+
+    report = await service.backfill(
+        symbols=["BTCUSDT"],
+        interval="5m",
+        market_type=MarketType.FUTURES,
+    )
+
+    assert report.candles_fetched == 3
+    assert [r["open_time"] for r in captured[0]] == [c.open_time for c in candles[:3]]

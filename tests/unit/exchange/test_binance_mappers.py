@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.core.enums import (
@@ -288,3 +288,23 @@ def test_map_futures_position_isolated_bool_fallback():
 
     raw_cross = dict(raw_isolated, isolated=False)
     assert map_futures_position(raw_cross).margin_type is MarginType.CROSSED
+
+def _kline_row(open_ms: int, close_ms: int) -> list:
+    return [open_ms, "1.0", "2.0", "0.5", "1.5", "100.0", close_ms, "150.0", 42, "50.0"]
+
+
+def test_map_kline_in_progress_bar_is_not_closed():
+    open_ms = 1_700_000_000_000
+    close_ms = open_ms + 299_999
+    before_close = datetime.fromtimestamp((close_ms - 1) / 1000, tz=UTC)
+    after_close = datetime.fromtimestamp((close_ms + 1) / 1000, tz=UTC)
+    row = _kline_row(open_ms, close_ms)
+
+    assert map_kline(row, MarketType.FUTURES, "BTCUSDT", "5m", now=before_close).closed is False
+    assert map_kline(row, MarketType.FUTURES, "BTCUSDT", "5m", now=after_close).closed is True
+
+
+def test_map_kline_defaults_to_wall_clock():
+    far_future_ms = 4_102_444_800_000  # 2100-01-01
+    row = _kline_row(far_future_ms, far_future_ms + 299_999)
+    assert map_kline(row, MarketType.FUTURES, "BTCUSDT", "5m").closed is False
