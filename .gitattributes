@@ -1,0 +1,9 @@
+# Line endings are normalized by the repo, not by each machine's core.autocrlf.
+* text=auto eol=lf
+
+# PowerShell scripts keep CRLF for Windows tooling.
+*.ps1 text eol=crlf
+
+# Binary artifacts.
+*.joblib binary
+*.png binary
