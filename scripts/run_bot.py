@@ -18,6 +18,7 @@ from app.agents import (
     ResearchAgent,
     RiskAgent,
     RoundTripAgent,
+    SignalRecorderAgent,
     TradeRecorderAgent,
     TradingManager,
 )
@@ -255,6 +256,7 @@ async def main() -> None:
     registry.register(AuditorAgent(context))
     registry.register(RoundTripAgent(context))
     registry.register(TradeRecorderAgent(context))
+    registry.register(SignalRecorderAgent(context))
     registry.register(QAAgent(context))
     registry.register(
         EngineeringAgent(context, heartbeat=heartbeat, workflows=workflows)
@@ -309,6 +311,7 @@ async def main() -> None:
             exchange=exchange,
             session_factory=AsyncSessionLocal,
             recorder=order_recorder,
+            record_runs=True,
         )
         while True:
             try:
