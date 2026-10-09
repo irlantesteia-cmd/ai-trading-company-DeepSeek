@@ -11,7 +11,12 @@ from app.core.config import settings
 from app.core.enums import AgentRole, MarketType, OrderSide, OrderStatus, OrderType, PositionSide
 from app.domain.models.order import Order, OrderRequest
 from app.domain.models.order_intent import OrderIntent
-from app.events.event import OrderFilled, OrderIntentCreated, OrderSubmitted
+from app.events.event import (
+    HealthCheckFailed,
+    OrderFilled,
+    OrderIntentCreated,
+    OrderSubmitted,
+)
 from app.exchanges.symbol_info import SymbolInfoService
 
 logger = logging.getLogger(__name__)
@@ -159,19 +164,27 @@ class ExecutionAgent(BaseAgent):
         else:
             position_side = None
 
-        if send_sl and intent.stop_price is not None:
-            await self._send_protective_order(
+        stop_price = self._anchor_to_fill(intent.stop_price, intent, entry)
+        target_price = self._anchor_to_fill(
+            getattr(intent, "target_price", None), intent, entry
+        )
+
+        if send_sl and stop_price is not None:
+            sl_ok = await self._send_protective_order(
                 symbol=intent.symbol,
                 side=exit_side,
                 type_=OrderType.STOP_MARKET,
-                trigger_price=intent.stop_price,
+                trigger_price=stop_price,
                 quantity=entry.executed_quantity,
                 position_side=position_side,
                 is_hedge=is_hedge,
                 kind="stop_loss",
             )
+            if not sl_ok and settings.close_on_stop_loss_failure:
+                # Sem stop, a posição não pode ficar aberta. O TP não é enviado.
+                await self._flatten_after_stop_loss_failure(intent, position_side)
+                return
 
-        target_price = getattr(intent, "target_price", None)
         if send_tp and target_price is not None:
             await self._send_protective_order(
                 symbol=intent.symbol,
@@ -184,6 +197,68 @@ class ExecutionAgent(BaseAgent):
                 kind="take_profit",
             )
 
+    @staticmethod
+    def _anchor_to_fill(
+        level: Decimal | None, intent: OrderIntent, entry: Order
+    ) -> Decimal | None:
+        """Reposiciona SL/TP no preço real do fill, mantendo a distância que o
+        dimensionamento usou (a partir de `intent.reference_price`).
+
+        O sinal é calculado no close do candle; a ordem MARKET sai a outro
+        preço (mercado andou, derrapagem). Sem isso, o SL pode já estar do
+        lado errado do preço e a Binance recusa (`-2021`).
+        """
+        reference = intent.reference_price
+        fill = entry.average_price
+        if level is None or reference is None or fill is None:
+            return level
+        anchored = fill + (level - reference)
+        if anchored <= 0:
+            return level
+        if anchored != level:
+            logger.info("execution.protective_level_anchored", extra={
+                "symbol": intent.symbol,
+                "reference_price": str(reference),
+                "fill_price": str(fill),
+                "original": str(level),
+                "anchored": str(anchored),
+            })
+        return anchored
+
+    async def _flatten_after_stop_loss_failure(
+        self, intent: OrderIntent, position_side: PositionSide | None
+    ) -> None:
+        logger.error("execution.flattening_after_stop_loss_failure", extra={
+            "symbol": intent.symbol, "signal_id": intent.signal_id,
+        })
+        try:
+            order = await self.context.exchange.positions.close_position(
+                intent.symbol, position_side
+            )
+        except Exception:
+            logger.exception("execution.flatten_failed", extra={
+                "symbol": intent.symbol,
+                "hint": "posição SEM stop-loss: fechar manualmente (close_all_positions.py)",
+            })
+            await self.context.event_bus.publish(HealthCheckFailed(
+                component="protection",
+                detail=f"{intent.symbol}: stop-loss falhou e o fechamento também falhou",
+            ))
+            return
+
+        await self.context.event_bus.publish(HealthCheckFailed(
+            component="protection",
+            detail=f"{intent.symbol}: stop-loss falhou; posição fechada a mercado",
+        ))
+        if order is not None and order.fills and order.average_price is not None:
+            await self.context.event_bus.publish(OrderFilled(
+                exchange_order_id=order.exchange_order_id,
+                symbol=order.symbol,
+                filled_quantity=float(order.executed_quantity),
+                average_price=float(order.average_price),
+                order=order,
+            ))
+
     async def _send_protective_order(
         self,
         *,
@@ -195,7 +270,8 @@ class ExecutionAgent(BaseAgent):
         position_side: PositionSide | None,
         is_hedge: bool,
         kind: str,
-    ) -> None:
+    ) -> bool:
+        """Envia a ordem condicional. Retorna False se não foi criada."""
         try:
             rounded_trigger = self._symbol_info.round_price(
                 symbol, MarketType.FUTURES, trigger_price
@@ -207,7 +283,7 @@ class ExecutionAgent(BaseAgent):
             logger.exception(f"execution.{kind}_quantize_failed", extra={
                 "symbol": symbol, "trigger_price": str(trigger_price),
             })
-            return
+            return False
 
         prefix = "sl" if kind == "stop_loss" else "tp"
         request = OrderRequest(
@@ -236,8 +312,9 @@ class ExecutionAgent(BaseAgent):
                 "trigger_price": str(rounded_trigger),
                 "quantity": str(rounded_qty),
                 "hedge_mode": is_hedge,
-                "hint": "entrada seguiu sem proteção; verificar em close_all_positions.py",
             })
+            return False
+        return True
 
     async def _detect_hedge_mode(self) -> bool:
         """Detecta hedge mode do provider de posições.

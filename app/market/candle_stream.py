@@ -18,6 +18,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from app.core.config import settings
 from app.core.enums import MarketType
 from app.domain.models.market import Candle
 from app.events.bus import EventBus
@@ -47,9 +48,15 @@ class CandleStreamService:
         interval: str,
         market_type: MarketType,
         poll_interval_s: float = 30.0,
+        max_emit_lag_s: float | None = None,
     ) -> None:
+        """`max_emit_lag_s`: candle fechado há mais tempo que isto não é
+        emitido (default `settings.candle_max_emit_lag_s`; <= 0 desliga)."""
         if poll_interval_s <= 0:
             raise ValueError("poll_interval_s deve ser > 0")
+        self._max_emit_lag_s = (
+            settings.candle_max_emit_lag_s if max_emit_lag_s is None else max_emit_lag_s
+        )
         self._exchange = exchange
         self._event_bus = event_bus
         self._symbol = symbol
@@ -95,6 +102,24 @@ class CandleStreamService:
             self._last_emitted_open_time is not None
             and latest.open_time <= self._last_emitted_open_time
         ):
+            return None
+
+        lag_s = (now - latest.close_time).total_seconds()
+        if 0 < self._max_emit_lag_s < lag_s:
+            # Candle velho (volta de suspensão do PC, boot, rede lenta): um
+            # sinal calculado agora já nasceria atrasado. Marca como visto
+            # e espera o próximo fechamento.
+            self._last_emitted_open_time = latest.open_time
+            logger.warning(
+                "candle_stream.stale_skipped",
+                extra={
+                    "symbol": latest.symbol,
+                    "interval": latest.interval,
+                    "open_time": latest.open_time.isoformat(),
+                    "lag_s": round(lag_s, 1),
+                    "max_lag_s": self._max_emit_lag_s,
+                },
+            )
             return None
 
         await self._event_bus.publish(

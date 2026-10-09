@@ -21,6 +21,9 @@ class OrderIntent(DomainModel):
     stop_price: Decimal | None = None
     target_price: Decimal | None = None
     take_profit: Decimal | None = None
+    # Preço de entrada usado no dimensionamento (close do sinal). SL/TP são
+    # reancorados no preço real do fill mantendo a distância até ele.
+    reference_price: Decimal | None = None
     reason: str = ""
     agent: str = ""
 
