@@ -287,7 +287,11 @@ async def main() -> None:
             await asyncio.sleep(settings.health_check_interval_s)
 
     async def reconcile_task() -> None:
-        reconciler = Reconciler(exchange=exchange, session_factory=AsyncSessionLocal)
+        reconciler = Reconciler(
+            exchange=exchange,
+            session_factory=AsyncSessionLocal,
+            recorder=order_recorder,
+        )
         while True:
             try:
                 report = await reconciler.reconcile(market_type=market_type)
@@ -295,10 +299,7 @@ async def main() -> None:
                     await event_bus.publish(
                         HealthCheckFailed(
                             component="reconciliation",
-                            detail=(
-                                f"missing_on_exchange={report.missing_on_exchange} "
-                                f"missing_in_db={report.missing_in_db}"
-                            ),
+                            detail=f"unresolved={report.unresolved}",
                         )
                     )
             except ExchangeAuthError as exc:

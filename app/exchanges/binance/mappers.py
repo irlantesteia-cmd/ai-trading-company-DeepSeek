@@ -220,6 +220,63 @@ def map_order(raw: dict, market_type: MarketType) -> Order:
     )
 
 
+# algoStatus → OrderStatus. FINISHED = disparou e executou (a MARKET gerada está
+# em `actualOrderId`); TRIGGERING = disparando, ainda sem execução.
+_ALGO_STATUS_MAP: dict[str, OrderStatus] = {
+    "NEW": OrderStatus.NEW,
+    "TRIGGERING": OrderStatus.NEW,
+    "FINISHED": OrderStatus.FILLED,
+    "CANCELED": OrderStatus.CANCELED,
+    "EXPIRED": OrderStatus.EXPIRED,
+    "REJECTED": OrderStatus.REJECTED,
+}
+
+
+def _positive_dec(value: Any) -> Decimal | None:
+    """Decimal > 0 ou None (a Algo API usa "0"/"0.000000" para ausente)."""
+    if value in (None, ""):
+        return None
+    d = _dec(value)
+    return d if d > 0 else None
+
+
+def map_algo_order(raw: dict) -> Order:
+    """Mapeia uma ordem da Algo Order API (`/fapi/v1/algoOrder`,
+    `openAlgoOrders`, `allAlgoOrders`). Sempre FUTURES.
+
+    `exchange_order_id` é o `algoId`. Para FINISHED, `executed_quantity` e
+    `average_price` vêm de `actualQty`/`actualPrice` (a ordem MARKET gerada).
+    """
+    algo_status = raw.get("algoStatus")
+    if algo_status not in _ALGO_STATUS_MAP:
+        raise ValueError(f"algoStatus desconhecido: {algo_status!r}")
+    status = _ALGO_STATUS_MAP[algo_status]
+
+    executed = _dec(raw.get("actualQty") or "0")
+    created_ms = raw.get("createTime") or 0
+    updated_ms = raw.get("updateTime") or created_ms
+
+    return Order(
+        exchange_order_id=str(raw["algoId"]),
+        client_order_id=str(raw.get("clientAlgoId") or ""),
+        symbol=raw["symbol"],
+        market_type=MarketType.FUTURES,
+        side=OrderSide(raw["side"]),
+        type=OrderType(raw["orderType"]),
+        status=status,
+        quantity=_dec(raw.get("quantity") or "0"),
+        executed_quantity=executed,
+        price=_positive_dec(raw.get("price")),
+        average_price=_positive_dec(raw.get("actualPrice")),
+        stop_price=_positive_dec(raw.get("triggerPrice")),
+        time_in_force=_safe_time_in_force(raw.get("timeInForce")),
+        reduce_only=bool(raw.get("reduceOnly", False)),
+        position_side=PositionSide(raw["positionSide"]) if raw.get("positionSide") else None,
+        created_at=_dt_ms(created_ms) if created_ms else datetime.now(UTC),
+        updated_at=_dt_ms(updated_ms) if updated_ms else datetime.now(UTC),
+    )
+
+
 def map_user_trade(raw: dict) -> OrderFill:
     """Mapeia um item de `GET /fapi/v1/userTrades` para `OrderFill`."""
     return OrderFill(
