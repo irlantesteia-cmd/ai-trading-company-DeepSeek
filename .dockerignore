@@ -1,0 +1,25 @@
+# Segredos: injetados em runtime pelo compose (env_file), nunca na imagem.
+.env
+.env.*
+!.env.example
+
+# Ambientes, VCS e caches
+.venv*/
+.git/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Artefatos locais (models/ é montado como volume)
+logs/
+models/
+data/
+artifacts/
+
+# Não usados pela imagem do bot
+tests/
+docker/grafana/
+HANDOFF_CLAUDE_CODE.md

@@ -45,21 +45,28 @@ services:
       postgres:
         condition: service_healthy
 
+  # Bot de trading. Só sobe com o profile explícito, nunca num
+  # `docker compose up` comum: com auto-execução ligada no .env, ele opera.
+  #   docker compose --profile bot up -d app
   app:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    profiles: ["bot"]
     env_file:
       - .env
-    ports:
-      - "8000:8000"
+    environment:
+      # No container os serviços são acessados pelo nome, não por 127.0.0.1.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/ai_trading?ssl=disable
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./models:/app/models
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - .:/app
+    restart: "no"
 
 volumes:
   postgres_data:

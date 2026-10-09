@@ -55,22 +55,49 @@ alembic upgrade head
 
 # 5) Rodar o bot
 python scripts/run_bot.py
+```
 
-Scripts auxiliares
-scripts/diagnose_binance_auth.py — valida formato das credenciais sem vazar segredos
+### Rodar o bot em container
 
-scripts/test_binance_auth.py — testa contra SPOT e FUTURES testnet; descobre qual aceita a chave
+O serviço `app` fica no profile `bot`: um `docker compose up` comum **não** o
+sobe, porque com `SIGNAL_AUTO_EXECUTION_ENABLED=true` o bot opera na conta.
+O `.env` não entra na imagem; o compose o injeta em tempo de execução e
+aponta `DATABASE_URL`/`REDIS_URL` para os serviços internos.
 
-Estratégia de branches
+```powershell
+docker compose up -d postgres redis
+alembic upgrade head
+docker compose --profile bot up -d --build app
+docker compose logs -f app
+docker compose --profile bot stop app
+```
+
+### Grafana
+
+```powershell
+docker compose up -d grafana
+# http://127.0.0.1:3000 — dashboard "Trading — visão geral" (pasta Trading)
+```
+
+### Scripts auxiliares
+
+- `scripts/diagnose_binance_auth.py` — valida formato das credenciais sem vazar segredos
+- `scripts/test_binance_auth.py` — testa contra SPOT e FUTURES testnet; descobre qual aceita a chave
+
+## Estratégia de branches
+
+```
 main          ← sempre estável, só recebe merge de develop quando testado
 develop       ← integração; PRs vêm de feature/* e fix/*
 feature/*     ← novas funcionalidades
 fix/*         ← correções
 experiment/*  ← experimentos descartáveis
 refactor/*    ← refatorações sem mudança de comportamento
+```
 
 Regra: nunca commitar direto em main. Todo trabalho novo vai em
-feature/* ou fix/* e abre PR para develop.
+feature/* ou fix/* e abre PR para develop. Releases `develop` → `main` usam
+**merge commit** (não squash), para o histórico dos dois branches não divergir.
 
 Convenções
 Commits
