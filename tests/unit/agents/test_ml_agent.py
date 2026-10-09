@@ -82,3 +82,21 @@ def test_pipeline_injected(context, tmp_path: Path):
     agent = MLAgent(context, model_dir=tmp_path, pipeline=custom)
     assert agent.model_dir == tmp_path
     assert agent.horizon == 5
+
+@pytest.mark.asyncio
+async def test_train_prunes_old_versions(context, tmp_path: Path, monkeypatch):
+    from app.core.config import settings
+    from tests.unit.ml.test_retention import _write
+
+    monkeypatch.setattr(settings, "ml_model_retention", 2)
+    for day in range(1, 5):
+        _write(tmp_path, f"BTCUSDT_h5_2026100{day}T120000Z")
+    _write(tmp_path, "ETHUSDT_h5_20261001T120000Z")
+
+    agent = MLAgent(context, model_dir=tmp_path)
+    result = await agent.train(symbol="BTCUSDT", candles=_trending_candles(300))
+
+    btc = sorted(p.stem for p in tmp_path.glob("BTCUSDT_h5_*.joblib"))
+    # O modelo recém-treinado + o mais recente dos antigos; ETH intocado.
+    assert btc == sorted([result.metadata.version, "BTCUSDT_h5_20261004T120000Z"])
+    assert (tmp_path / "ETHUSDT_h5_20261001T120000Z.joblib").exists()
