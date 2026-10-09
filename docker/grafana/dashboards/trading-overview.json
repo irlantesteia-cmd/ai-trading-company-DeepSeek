@@ -1,0 +1,515 @@
+{
+  "uid": "trading-overview",
+  "title": "Trading — visão geral",
+  "tags": [
+    "trading"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Resultado (round trips fechados no período)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "P&L líquido",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(net_pnl), 0) AS \"P&L líquido\" FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Round trips",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Round trips\" FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Win rate",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT 100.0 * AVG(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END) AS \"Win rate\" FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Taxas pagas",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(entry_fee + COALESCE(exit_fee, 0)), 0) AS \"Taxas\" FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "P&L líquido acumulado",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT closed_at AS time, SUM(net_pnl) OVER (ORDER BY closed_at) AS \"P&L acumulado\" FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at) ORDER BY closed_at"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "P&L acumulado por símbolo",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT closed_at AS time, symbol AS metric, SUM(net_pnl) OVER (PARTITION BY symbol ORDER BY closed_at) AS value FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at) ORDER BY closed_at"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Por motivo de fechamento",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT close_reason AS \"Motivo\", COUNT(*) AS \"Quantidade\", ROUND(SUM(net_pnl), 2) AS \"P&L líquido\" FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at) GROUP BY close_reason ORDER BY close_reason"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Ganho / perda médios por símbolo",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 13,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT symbol AS \"Símbolo\", COUNT(*) AS \"Trips\", ROUND(100.0 * AVG(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END), 1) AS \"Win rate %\", ROUND(AVG(net_pnl) FILTER (WHERE net_pnl > 0), 2) AS \"Ganho médio\", ROUND(AVG(net_pnl) FILTER (WHERE net_pnl <= 0), 2) AS \"Perda média\", ROUND(SUM(net_pnl), 2) AS \"P&L líquido\" FROM round_trips WHERE status = 'CLOSED' AND $__timeFilter(closed_at) GROUP BY symbol ORDER BY symbol"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Últimos 20 round trips",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT closed_at AS \"Fechado em\", symbol AS \"Símbolo\", position_side AS \"Lado\", close_reason AS \"Motivo\", entry_avg_price AS \"Entrada\", exit_avg_price AS \"Saída\", entry_quantity AS \"Qtd\", ROUND(net_pnl, 4) AS \"P&L líquido\" FROM round_trips WHERE status = 'CLOSED' ORDER BY closed_at DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Ordens (tabela orders)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Ordens por status (por hora)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroupAlias(exchange_created_at, '1h'), status AS metric, COUNT(*) AS value FROM orders WHERE $__timeFilter(exchange_created_at) GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "SL/TP abertos",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT symbol AS \"Símbolo\", type AS \"Tipo\", side AS \"Lado\", stop_price AS \"Gatilho\", quantity AS \"Qtd\", client_order_id AS \"Client ID\", exchange_created_at AS \"Criada em\" FROM orders WHERE is_conditional AND status IN ('NEW', 'PARTIALLY_FILLED') ORDER BY exchange_created_at DESC"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Ordens rejeitadas",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT exchange_created_at AS \"Em\", symbol AS \"Símbolo\", type AS \"Tipo\", side AS \"Lado\", quantity AS \"Qtd\", client_order_id AS \"Client ID\" FROM orders WHERE status = 'REJECTED' AND $__timeFilter(exchange_created_at) ORDER BY exchange_created_at DESC LIMIT 50"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Dados de mercado",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Último candle por símbolo",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 16,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT symbol AS \"Símbolo\", interval AS \"Intervalo\", COUNT(*) AS \"Candles\", MAX(open_time) AS \"Último candle\", ROUND(EXTRACT(EPOCH FROM (now() - MAX(close_time))) / 3600.0, 1) AS \"Atraso (h)\" FROM candles GROUP BY symbol, interval ORDER BY symbol"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Candles parciais no banco",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 47,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Parciais\" FROM candles WHERE created_at < close_time AND updated_at < close_time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
