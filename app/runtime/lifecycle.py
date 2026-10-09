@@ -3,14 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from contextlib import suppress
+from typing import Any
 
 from app.orchestration.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
-TaskFactory = Callable[[], Awaitable[None]]
+TaskFactory = Callable[[], Coroutine[Any, Any, None]]
 
 
 class ApplicationLifecycle:

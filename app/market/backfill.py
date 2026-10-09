@@ -56,7 +56,7 @@ class HistoryBackfillService:
 
         for symbol in symbols:
             try:
-                report = await self._backfill_one(
+                counts = await self._backfill_one(
                     symbol=symbol,
                     interval=interval,
                     market_type=market_type,
@@ -70,8 +70,8 @@ class HistoryBackfillService:
                 continue
 
             processed += 1
-            total_fetched += report["fetched"]
-            total_persisted += report["persisted"]
+            total_fetched += counts["fetched"]
+            total_persisted += counts["persisted"]
 
         report = BackfillReport(
             symbols_processed=processed,

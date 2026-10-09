@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from typing import cast
+
+from sqlalchemy import CursorResult, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.enums import MarketType
@@ -37,7 +39,8 @@ class CandleRepository(BaseRepository[CandleORM]):
                 "updated_at": func.now(),
             },
         )
-        result = await self.session.execute(stmt)
+        # INSERT ... ON CONFLICT devolve CursorResult (com rowcount).
+        result = cast(CursorResult, await self.session.execute(stmt))
         await self.session.flush()
         return result.rowcount or 0
 

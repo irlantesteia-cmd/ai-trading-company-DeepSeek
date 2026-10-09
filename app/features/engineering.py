@@ -98,9 +98,10 @@ def ema_distance(closes: Sequence[float], period: int) -> list[float | None]:
     e = ema(closes, period)
     out: list[float | None] = [None] * len(closes)
     for i in range(len(closes)):
-        if e[i] is None or closes[i] == 0:
+        ema_i = e[i]
+        if ema_i is None or closes[i] == 0:
             continue
-        out[i] = (closes[i] - e[i]) / closes[i]
+        out[i] = (closes[i] - ema_i) / closes[i]
     return out
 
 
@@ -116,9 +117,10 @@ def atr_normalized(
     a = atr(highs, lows, closes, period)
     out: list[float | None] = [None] * len(closes)
     for i in range(len(closes)):
-        if a[i] is None or closes[i] == 0:
+        atr_i = a[i]
+        if atr_i is None or closes[i] == 0:
             continue
-        out[i] = a[i] / closes[i]
+        out[i] = atr_i / closes[i]
     return out
 
 

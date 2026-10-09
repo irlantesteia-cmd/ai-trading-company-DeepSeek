@@ -18,3 +18,4 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest
       - run: ruff check .
+      - run: mypy

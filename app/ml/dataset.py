@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from app.domain.models.market import Candle
-from app.features.pipeline import FeaturePipeline
+from app.features.pipeline import FeatureTransformer
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class Dataset:
 def build_dataset(
     candles: list[Candle],
     *,
-    pipeline: FeaturePipeline,
+    pipeline: FeatureTransformer,
     horizon: int = 5,
     min_return_pct: float = 0.0,
     ref_candles: dict[str, list[Candle]] | None = None,

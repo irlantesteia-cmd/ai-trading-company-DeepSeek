@@ -32,18 +32,14 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.domain.models.signal import Signal
-from app.features.pipeline import FeaturePipeline, default_pipeline
+from app.features.pipeline import FeatureTransformer, default_pipeline
 from app.ml.inference import MLSignalGenerator
 from app.ml.model import ForwardReturnClassifier
 from app.strategies.base import Strategy
 from app.strategies.context import StrategyContext
-
-if TYPE_CHECKING:
-    from app.features.cross_asset import CrossAssetPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +59,7 @@ class MLStrategy(Strategy):
         symbol: str,
         model_dir: Path,
         horizon: int = 5,
-        pipeline: FeaturePipeline | CrossAssetPipeline | None = None,
+        pipeline: FeatureTransformer | None = None,
         long_threshold: float = 0.6,
         short_threshold: float = 0.4,
         min_deploy_auc: float | None = None,

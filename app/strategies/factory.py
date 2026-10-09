@@ -17,7 +17,7 @@ from pathlib import Path
 
 from app.core.exceptions import ConfigurationError
 from app.features.cross_asset import CrossAssetPipeline
-from app.features.pipeline import FeaturePipeline, default_pipeline
+from app.features.pipeline import FeatureTransformer, default_pipeline
 from app.strategies.base import Strategy
 from app.strategies.mean_reversion import MeanReversionStrategy
 from app.strategies.ml_strategy import MLStrategy
@@ -58,11 +58,12 @@ def make_strategy(
     if normalized == "mean_reversion":
         return MeanReversionStrategy()
     if normalized == "ml":
-        pipeline: FeaturePipeline | CrossAssetPipeline = default_pipeline()
+        base = default_pipeline()
+        pipeline: FeatureTransformer = base
         if ref_symbol:
             horizons = sorted(set(ref_horizons or _DEFAULT_REF_HORIZONS))
             pipeline = CrossAssetPipeline(
-                pipeline,
+                base,
                 ref_symbol=ref_symbol,
                 ref_horizons=horizons,
             )

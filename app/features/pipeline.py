@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,6 +29,19 @@ class FeatureMatrix:
     names: list[str]
     indices: list[int]
     times: list[datetime]
+
+
+class FeatureTransformer(Protocol):
+    """Contrato comum de `FeaturePipeline` e `CrossAssetPipeline`."""
+
+    @property
+    def names(self) -> list[str]: ...
+
+    def transform(
+        self,
+        candles: list[Candle],
+        ref_candles: dict[str, list[Candle]] | None = None,
+    ) -> FeatureMatrix: ...
 
 
 class FeaturePipeline:
