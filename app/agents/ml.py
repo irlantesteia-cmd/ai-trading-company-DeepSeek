@@ -10,7 +10,7 @@ from app.database.repositories.candle import CandleRepository
 from app.domain.models.market import Candle
 from app.domain.models.signal import Signal
 from app.features.cross_asset import CrossAssetPipeline
-from app.features.pipeline import FeaturePipeline, default_pipeline
+from app.features.pipeline import FeaturePipeline, FeatureTransformer, default_pipeline
 from app.ml.dataset import build_dataset
 from app.ml.inference import MLSignalGenerator
 from app.ml.model import ForwardReturnClassifier, make_version
@@ -74,7 +74,7 @@ class MLAgent(BaseAgent):
     def min_deploy_auc(self) -> float:
         return self._min_deploy_auc
 
-    def _effective_pipeline(self, symbol: str):
+    def _effective_pipeline(self, symbol: str) -> FeatureTransformer:
         ref = self._cross_asset_refs.get(symbol)
         if not ref:
             return self._base_pipeline

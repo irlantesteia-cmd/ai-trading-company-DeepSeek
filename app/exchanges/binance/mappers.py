@@ -189,6 +189,8 @@ def map_order(raw: dict, market_type: MarketType) -> Order:
 
     raw_type = raw.get("type") or raw.get("orderType")
     raw_status = raw.get("status") or raw.get("algoStatus")
+    if raw_type is None or raw_status is None:
+        raise ValueError(f"ordem sem type/status: {raw!r}")
 
     ts_ms = (
         raw.get("updateTime") or raw.get("time") or raw.get("transactTime")

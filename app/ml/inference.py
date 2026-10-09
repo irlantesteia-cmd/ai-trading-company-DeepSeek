@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from app.core.enums import MarketRegime, SignalDirection
 from app.domain.models.signal import Signal
-from app.features.pipeline import FeaturePipeline
+from app.features.pipeline import FeatureTransformer
 from app.ml.model import ForwardReturnClassifier
 from app.strategies.context import StrategyContext
 
@@ -29,7 +29,7 @@ class MLSignalGenerator:
     def __init__(
         self,
         model: ForwardReturnClassifier,
-        pipeline: FeaturePipeline,
+        pipeline: FeatureTransformer,
         *,
         long_threshold: float = 0.6,
         short_threshold: float = 0.4,

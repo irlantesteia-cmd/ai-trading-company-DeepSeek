@@ -55,3 +55,11 @@ pythonpath = ["."]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+
+[[tool.mypy.overrides]]
+# Sem stubs de tipos publicados.
+module = ["joblib", "joblib.*", "sklearn", "sklearn.*"]
+ignore_missing_imports = true
