@@ -102,6 +102,48 @@ async def test_close_position_one_way_uses_reduce_only():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["close", "tx"])
+async def test_close_position_client_order_prefix(prefix):
+    """O prefixo do clientOrderId identifica o motivo do fechamento."""
+    positions, client = _provider()
+    try:
+        with respx.mock(base_url=FUTURES_BASE_URL) as mock:
+            _mock_futures_time(mock)
+            mock.get("/fapi/v1/positionSide/dual").mock(
+                return_value=Response(200, json={"dualSidePosition": False})
+            )
+            mock.get("/fapi/v2/positionRisk").mock(
+                return_value=Response(200, json=_position_json())
+            )
+            order_route = mock.post("/fapi/v1/order").mock(
+                return_value=Response(
+                    200,
+                    json={
+                        "orderId": 1,
+                        "clientOrderId": "c-1",
+                        "symbol": "SOLUSDT",
+                        "side": "SELL",
+                        "type": "MARKET",
+                        "status": "NEW",
+                        "origQty": "84.35",
+                        "executedQty": "0",
+                        "time": 1_700_000_000_000,
+                        "updateTime": 1_700_000_000_000,
+                    },
+                )
+            )
+
+            await positions.close_position("SOLUSDT", client_order_prefix=prefix)
+
+            sent_url = str(order_route.calls[0].request.url)
+            assert "reduceOnly=true" in sent_url
+            assert "positionSide" not in sent_url
+            assert f"newClientOrderId={prefix}-" in sent_url
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_close_position_hedge_uses_position_side():
     """Hedge mode: positionSide=LONG, sem reduceOnly."""
     positions, client = _provider()
