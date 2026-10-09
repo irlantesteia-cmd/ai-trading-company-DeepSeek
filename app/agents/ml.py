@@ -15,6 +15,7 @@ from app.features.pipeline import FeaturePipeline, FeatureTransformer, default_p
 from app.ml.dataset import build_dataset
 from app.ml.inference import MLSignalGenerator
 from app.ml.model import ForwardReturnClassifier, make_version
+from app.ml.retention import prune_models
 from app.ml.training import (
     TrainingResult,
     save_training_result,
@@ -146,6 +147,16 @@ class MLAgent(BaseAgent):
             max_std=settings.ml_walk_forward_max_std,
         )
         path = save_training_result(result, self._model_dir)
+        try:
+            prune_models(
+                self._model_dir,
+                symbol=symbol,
+                horizon=self._horizon,
+                keep=settings.ml_model_retention,
+            )
+        except Exception:
+            # Retenção é faxina: nunca pode derrubar o treino.
+            logger.exception("ml.retention_failed", extra={"symbol": symbol})
         self._models[symbol] = result.model
         self._generators[symbol] = MLSignalGenerator(result.model, pipeline)
 

@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     ml_min_deploy_auc: float = 0.5
     ml_label_min_return_pct: float = 0.0
     ml_boot_model_grace_seconds: float = 120.0
+    # Versões mantidas em models/ por símbolo/horizonte após cada treino
+    # (+ o deployable mais recente). 0 desliga a retenção.
+    ml_model_retention: int = 5
     # Walk-forward validation (ML-3b)
     ml_walk_forward_folds: int = 5
     ml_walk_forward_max_std: float = 0.10
