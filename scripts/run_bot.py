@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any
 
 from app.agents import (
     AssetAgent,
@@ -28,10 +27,9 @@ from app.core.exceptions import ConfigurationError, ExchangeAuthError
 from app.core.logging import setup_logging
 from app.database.session import AsyncSessionLocal, check_connection
 from app.events.bus import EventBus
-from app.events.event import HealthCheckFailed, OrderFilled
+from app.events.event import HealthCheckFailed
 from app.exchanges.binance.adapter import BinanceAdapter
 from app.exchanges.binance.client import BinanceClient
-from app.exchanges.binance.mappers import map_order_trade_update
 from app.exchanges.binance.user_stream import UserDataStreamClient
 from app.exchanges.symbol_info import SymbolInfoService
 from app.github.client import GitHubClient
@@ -51,7 +49,9 @@ from app.runtime.evolution import EvolutionLoop
 from app.runtime.heartbeat import HeartbeatMonitor
 from app.runtime.lifecycle import ApplicationLifecycle
 from app.runtime.metrics_collector import MetricsCollector
+from app.runtime.order_recorder import OrderRecorder, RecordingOrderProvider
 from app.runtime.recovery import Reconciler
+from app.runtime.user_stream_handler import handle_user_stream_event
 from app.strategies import Strategy, make_strategy
 
 logger = logging.getLogger(__name__)
@@ -174,10 +174,13 @@ async def main() -> None:
         },
     )
 
+    # Toda ordem (entrada, SL/TP, fechamento) passa pelo recorder → `orders`.
+    order_recorder = OrderRecorder(AsyncSessionLocal)
     exchange = BinanceAdapter(
         api_key=settings.binance_api_key,
         api_secret=settings.binance_api_secret,
         testnet=settings.binance_testnet,
+        orders_wrapper=lambda inner: RecordingOrderProvider(inner, order_recorder),
     )
 
     market_type = MarketType(settings.default_market_type)
@@ -390,33 +393,6 @@ async def main() -> None:
         )
         await loop.run_forever()
 
-    async def _handle_user_stream_event(event: dict[str, Any]) -> None:
-        if event.get("e") != "ORDER_TRADE_UPDATE":
-            return
-        order = map_order_trade_update(event, market_type)
-        if order is None:
-            return
-        if not order.fills or order.average_price is None:
-            return
-        await event_bus.publish(
-            OrderFilled(
-                exchange_order_id=order.exchange_order_id,
-                symbol=order.symbol,
-                filled_quantity=float(order.executed_quantity),
-                average_price=float(order.average_price),
-                order=order,
-            )
-        )
-        logger.info(
-            "user_stream.order_filled",
-            extra={
-                "order_id": order.exchange_order_id,
-                "symbol": order.symbol,
-                "status": order.status.value,
-                "num_fills": len(order.fills),
-            },
-        )
-
     async def user_stream_task() -> None:
         if not (settings.binance_api_key and settings.binance_api_secret):
             logger.warning("user_stream.skipped_no_credentials")
@@ -430,7 +406,12 @@ async def main() -> None:
         try:
             async for event in uds.stream():
                 try:
-                    await _handle_user_stream_event(event)
+                    await handle_user_stream_event(
+                        event,
+                        market_type=market_type,
+                        event_bus=event_bus,
+                        recorder=order_recorder,
+                    )
                 except Exception:
                     logger.exception("user_stream.event_handler_failed")
         finally:

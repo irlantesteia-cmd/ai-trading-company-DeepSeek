@@ -232,24 +232,27 @@ def map_user_trade(raw: dict) -> OrderFill:
     )
 
 
-def map_order_trade_update(raw: dict, market_type: MarketType) -> Order | None:
-    """Converte um evento `ORDER_TRADE_UPDATE` do UDS em `Order` com 1 fill."""
+def map_order_update(raw: dict, market_type: MarketType) -> Order:
+    """Converte qualquer `ORDER_TRADE_UPDATE` do UDS em `Order`.
+
+    Cobre todos os tipos de execução (`o.x`: NEW, CANCELED, EXPIRED, TRADE,
+    ...). Só eventos TRADE com quantidade > 0 carregam um fill.
+    """
     o = raw.get("o") or {}
-    if o.get("x") != "TRADE":
-        return None
 
+    fills: list[OrderFill] = []
     last_qty = _dec(o.get("l", "0"))
-    if last_qty <= 0:
-        return None
-
-    fill = OrderFill(
-        price=_dec(o.get("L", "0")),
-        quantity=last_qty,
-        commission=_dec(o.get("n", "0")),
-        commission_asset=o.get("N") or "",
-        timestamp=_dt_ms(o.get("T") or raw.get("E") or 0),
-        trade_id=str(o["t"]) if o.get("t") is not None else None,
-    )
+    if o.get("x") == "TRADE" and last_qty > 0:
+        fills.append(
+            OrderFill(
+                price=_dec(o.get("L", "0")),
+                quantity=last_qty,
+                commission=_dec(o.get("n", "0")),
+                commission_asset=o.get("N") or "",
+                timestamp=_dt_ms(o.get("T") or raw.get("E") or 0),
+                trade_id=str(o["t"]) if o.get("t") is not None else None,
+            )
+        )
 
     event_ms = raw.get("E") or 0
     order_ms = o.get("T") or event_ms
@@ -272,8 +275,17 @@ def map_order_trade_update(raw: dict, market_type: MarketType) -> Order | None:
         position_side=PositionSide(o["ps"]) if o.get("ps") else None,
         created_at=_dt_ms(order_ms) if order_ms else datetime.now(UTC),
         updated_at=_dt_ms(event_ms) if event_ms else datetime.now(UTC),
-        fills=[fill],
+        fills=fills,
     )
+
+
+def map_order_trade_update(raw: dict, market_type: MarketType) -> Order | None:
+    """Converte um evento `ORDER_TRADE_UPDATE` do UDS em `Order` com 1 fill.
+
+    None quando o evento não é um fill (x != TRADE ou quantidade zero).
+    """
+    order = map_order_update(raw, market_type)
+    return order if order.fills else None
 
 
 def order_request_to_params(
