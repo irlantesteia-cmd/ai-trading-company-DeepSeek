@@ -50,7 +50,7 @@ class ExecutionAgent(BaseAgent):
             )
 
         request = OrderRequest(
-            client_order_id=f"ai-{intent.intent_id[:24]}",
+            client_order_id=intent.client_order_id,
             symbol=intent.symbol, market_type=intent.market_type,
             side=intent.side, type=intent.order_type,
             quantity=quantity, price=intent.price, stop_price=stop_price,

@@ -2,6 +2,7 @@ from app.database.models.asset import TradingPairORM
 from app.database.models.candle import CandleORM
 from app.database.models.order import OrderFillORM, OrderORM
 from app.database.models.position import FuturesPositionSnapshotORM
+from app.database.models.reconciliation_run import ReconciliationRunORM
 from app.database.models.signal import SignalORM
 from app.database.models.trade import TradeORM
 
@@ -10,6 +11,7 @@ __all__ = [
     "FuturesPositionSnapshotORM",
     "OrderFillORM",
     "OrderORM",
+    "ReconciliationRunORM",
     "SignalORM",
     "TradeORM",
     "TradingPairORM",

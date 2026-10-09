@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "time": {
     "from": "now-7d",
@@ -510,6 +510,257 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Sinais e reconciliação",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Sinais por decisão (por hora)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroupAlias(generated_at, '1h'), COALESCE(decision, 'PENDENTE') AS metric, COUNT(*) AS value FROM signals WHERE $__timeFilter(generated_at) GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Taxa de aprovação",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 55,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT 100.0 * COUNT(*) FILTER (WHERE decision = 'APPROVED') / NULLIF(COUNT(*) FILTER (WHERE decision IN ('APPROVED', 'REJECTED')), 0) AS \"Aprovados\" FROM signals WHERE $__timeFilter(generated_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Minutos desde a última reconciliação",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 55,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (now() - MAX(checked_at))) / 60.0, 1) AS \"Minutos\" FROM reconciliation_runs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "table",
+      "title": "Motivos de rejeição",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 59,
+        "w": 12,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT decision_reason AS \"Motivo\", COUNT(*) AS \"Sinais\" FROM signals WHERE decision = 'REJECTED' AND $__timeFilter(generated_at) GROUP BY decision_reason ORDER BY 2 DESC"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "table",
+      "title": "Últimos sinais e ordem gerada",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT s.generated_at AS \"Gerado em\", s.symbol AS \"Símbolo\", s.direction AS \"Direção\", ROUND(s.confidence::numeric, 3) AS \"Confiança\", s.strategy AS \"Estratégia\", COALESCE(s.decision, 'PENDENTE') AS \"Decisão\", s.decision_reason AS \"Motivo\", o.status AS \"Ordem\", o.average_price AS \"Preço médio\" FROM signals s LEFT JOIN orders o ON o.client_order_id = s.client_order_id ORDER BY s.generated_at DESC LIMIT 30"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Divergências por reconciliação",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT checked_at AS time, jsonb_array_length(missing_on_exchange) + jsonb_array_length(missing_in_db) AS \"Divergências\", jsonb_array_length(synced) AS \"Corrigidas\", jsonb_array_length(unresolved) AS \"Não resolvidas\" FROM reconciliation_runs WHERE $__timeFilter(checked_at) ORDER BY checked_at"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "table",
+      "title": "Reconciliações com divergência não resolvida",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT checked_at AS \"Em\", market_type AS \"Mercado\", unresolved::text AS \"Não resolvidas\", missing_on_exchange::text AS \"Sumiram da exchange\", missing_in_db::text AS \"Faltavam no banco\" FROM reconciliation_runs WHERE NOT balanced AND $__timeFilter(checked_at) ORDER BY checked_at DESC LIMIT 20"
+        }
+      ]
     }
   ]
 }
