@@ -17,6 +17,8 @@ httpx, pytest, Alembic, Docker, GitHub, NumPy, scikit-learn, joblib.
 ## Arquitetura
 
 A plataforma é organizada como uma "empresa de trading com IA":
+
+```
 CEO / ORCHESTRATOR
 │
 ├── TRADING MANAGER
@@ -29,6 +31,7 @@ CEO / ORCHESTRATOR
 ├── ENGINEERING AGENT
 ├── ML / DATA AGENT
 └── ASSET AGENTS (BTC, ETH, SOL, XRP, ...)
+```
 
 ## Como rodar
 
@@ -99,65 +102,52 @@ Regra: nunca commitar direto em main. Todo trabalho novo vai em
 feature/* ou fix/* e abre PR para develop. Releases `develop` → `main` usam
 **merge commit** (não squash), para o histórico dos dois branches não divergir.
 
-Convenções
-Commits
-Conventional Commits:
+## Convenções
+
+### Commits
+
+[Conventional Commits](https://www.conventionalcommits.org/), em inglês:
+
+```
 feat: add market data service
 fix: handle websocket reconnect
 test: add risk engine tests
 refactor: isolate binance adapter
 docs: update architecture
 perf: optimize feature calculation
-Testes
-pytest -q roda a suíte completa (233 testes)
+```
 
-ruff check . valida lint
-
-CI (.github/workflows/ci.yml) roda ambos em cada push/PR para main e develop
-
-Estado atual
-Fase	Descrição	Status
-0	Fundação (pyproject, Docker, CI, health)	✅
-1	Domínio, contratos, event bus, ORM, Alembic	✅
-2	Binance Adapter (REST + WebSocket + mappers)	✅
-3	Agentes e Orquestração	✅
-4	Risco e Portfólio	✅
-5	Estratégias e Backtest	✅
-6	ML e Features	✅
-7	Operação 24/7 e Recuperação	✅
-8	GitHub e Auto-Evolução Controlada	✅
-Total: 233 testes · lint limpo · 13 agentes · CI verde em Windows e Linux.
-
-text
-
----
-
-## Rodar no terminal PowerShell
+### Testes e qualidade
 
 ```powershell
-git add README.md
-git commit -m "docs: add architecture, setup and branch strategy"
-git push origin develop
-Abra https://github.com/irlantesteia-cmd/ai-trading-company-DeepSeek/actions — deve rodar o CI de novo em ~40 s, verde.
+pytest -q        # suíte completa
+ruff check .     # lint
+mypy             # tipos (configurado no pyproject para app/)
+```
 
-Próximo passo — escolher feature
-Agora o ciclo é:
+O CI (`.github/workflows/ci.yml`) roda os três em cada push e PR para `main` e `develop`.
 
-text
-1. git checkout develop
-2. git checkout -b feature/<nome>
-3. implementa + ruff + pytest local
-4. git push -u origin feature/<nome>
-5. Abre PR: feature/<nome> → develop
-6. CI verde → merge
-7. Quando develop estiver estável → PR develop → main
-Escolha uma feature:
+## Estado atual
 
-#	Feature	Branch sugerida	Tamanho
-1	Ligar EvolutionLoop no run_bot.py	feature/evolution-wire	Pequeno
-2	Persistir OrderFilled no DB	feature/persist-fills	Médio
-3	User Data Stream (listenKey)	feature/listen-key	Grande
-4	Nova estratégia (breakout)	feature/breakout-strategy	Médio
-5	Backfill de candles históricos	feature/backfill-candles	Médio
-6	Dashboard web (FastAPI + HTMX)	feature/dashboard	Grande
-Recomendação: começar pela #1 (EvolutionLoop) — é a menor, valida o ciclo completo de feature-branch → PR → merge, e liga a Fase 8 de verdade (o sistema passa a propor melhorias via PR automaticamente). Depois que essa passar, atacamos uma das médias.
+| Fase | Descrição | Status |
+|---|---|---|
+| 0 | Fundação (pyproject, Docker, CI, health) | ✅ |
+| 1 | Domínio, contratos, event bus, ORM, Alembic | ✅ |
+| 2 | Binance Adapter (REST + WebSocket + mappers) | ✅ |
+| 3 | Agentes e Orquestração | ✅ |
+| 4 | Risco e Portfólio | ✅ |
+| 5 | Estratégias e Backtest | ✅ |
+| 6 | ML e Features | ✅ |
+| 7 | Operação 24/7 e Recuperação | ✅ |
+| 8 | GitHub e Auto-Evolução Controlada | ✅ |
+
+Depois disso:
+
+- **Programa de ML encerrado** (2026-10-09). Nenhuma hipótese testada (OHLCV,
+  cross-asset, taker buy, funding, premium) passou de AUC 0,55 no walk-forward.
+  O código continua no repositório e os gates de deploy deixam o bot em
+  standby.
+- **Infra:** mypy no CI; persistência do ciclo de vida das ordens (`orders`);
+  reconciliação de ordens condicionais (SL/TP); cancelamento de SL/TP órfãos
+  no boot; retenção de modelos em `models/`; Grafana com dashboard de trading;
+  imagem Docker do bot.
