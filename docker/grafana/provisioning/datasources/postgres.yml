@@ -1,0 +1,20 @@
+# Datasource provisionado: Postgres do bot, via role somente-leitura
+# `grafana_ro` (migration 0006). Rode `alembic upgrade head` antes.
+apiVersion: 1
+
+datasources:
+  - name: Trading DB
+    uid: pg-trading
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: grafana_ro
+    isDefault: true
+    editable: false
+    jsonData:
+      database: ai_trading
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}

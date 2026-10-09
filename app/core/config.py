@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ai_trading?ssl=disable"
     redis_url: str = "redis://127.0.0.1:6379/0"
+    # Senha do role somente-leitura `grafana_ro` (migration 0006; datasource do Grafana).
+    grafana_db_password: str = "grafana_ro"
     db_ping_interval_s: float = 60.0
 
     # Binance (demo.binance.com)
