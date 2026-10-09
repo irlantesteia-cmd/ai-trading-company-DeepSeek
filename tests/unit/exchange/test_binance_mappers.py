@@ -13,6 +13,7 @@ from app.core.enums import (
 from app.exchanges.binance.mappers import (
     map_futures_position,
     map_kline,
+    map_kline_event,
     map_order,
     map_order_book,
     map_ticker,
@@ -54,6 +55,27 @@ def test_map_kline_spot():
     c = map_kline(row, MarketType.SPOT, "BTCUSDT", "1m")
     assert c.close == Decimal("1.5")
     assert c.trades == 42
+    assert c.taker_buy_base_volume == Decimal("50.0")
+    assert c.closed is True
+
+
+def test_map_kline_event_taker_buy():
+    raw = {
+        "k": {
+            "t": 1_700_000_000_000,
+            "T": 1_700_000_299_999,
+            "o": "1.0",
+            "h": "2.0",
+            "l": "0.5",
+            "c": "1.5",
+            "v": "100.0",
+            "n": 42,
+            "x": True,
+            "V": "40.0",
+        }
+    }
+    c = map_kline_event(raw, "BTCUSDT", MarketType.FUTURES, "5m")
+    assert c.taker_buy_base_volume == Decimal("40.0")
     assert c.closed is True
 
 

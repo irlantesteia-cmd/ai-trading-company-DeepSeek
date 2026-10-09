@@ -5,6 +5,7 @@ from app.features.engineering import (
     log_return,
     return_n,
     rsi,
+    taker_buy_ratio,
     volume_zscore,
 )
 
@@ -80,3 +81,27 @@ def test_body_ratio_full_bullish():
         closes=[102.0],
     )
     assert out[0] == pytest.approx(1.0)
+
+
+def test_taker_buy_ratio_known_values():
+    out = taker_buy_ratio([100.0, 50.0], [40.0, 25.0])
+    assert out[0] == pytest.approx(0.40)
+    assert out[1] == pytest.approx(0.50)
+
+
+def test_taker_buy_ratio_missing_or_zero_volume_is_none():
+    out = taker_buy_ratio([0.0, 10.0, 10.0], [1.0, None, 4.0])
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == pytest.approx(0.40)
+
+
+def test_taker_buy_ratio_clips_to_unit_interval():
+    out = taker_buy_ratio([10.0, 10.0], [12.0, -1.0])
+    assert out[0] == 1.0
+    assert out[1] == 0.0
+
+
+def test_taker_buy_ratio_length_mismatch():
+    with pytest.raises(ValueError):
+        taker_buy_ratio([1.0], [1.0, 2.0])

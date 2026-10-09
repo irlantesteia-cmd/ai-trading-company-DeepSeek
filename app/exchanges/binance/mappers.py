@@ -93,12 +93,29 @@ def map_ticker(raw: dict, market_type: MarketType) -> Ticker:
     )
 
 
+def _taker_buy_from_kline(raw: list) -> Decimal | None:
+    """Coluna 9 de klines REST: taker buy base asset volume."""
+    if len(raw) <= 9 or raw[9] in (None, ""):
+        return None
+    return _dec(raw[9])
+
+
+def _taker_buy_from_kline_event(k: dict) -> Decimal | None:
+    """Campo `V` do stream kline: taker buy base asset volume."""
+    raw = k.get("V")
+    if raw in (None, ""):
+        return None
+    return _dec(raw)
+
+
 def map_kline(raw: list, market_type: MarketType, symbol: str, interval: str) -> Candle:
     return Candle(
         symbol=symbol, market_type=market_type, interval=interval,
         open_time=_dt_ms(raw[0]), close_time=_dt_ms(raw[6]),
         open=_dec(raw[1]), high=_dec(raw[2]), low=_dec(raw[3]), close=_dec(raw[4]),
-        volume=_dec(raw[5]), trades=int(raw[8]) if len(raw) > 8 else 0, closed=True,
+        volume=_dec(raw[5]), trades=int(raw[8]) if len(raw) > 8 else 0,
+        taker_buy_base_volume=_taker_buy_from_kline(raw),
+        closed=True,
     )
 
 
@@ -108,7 +125,9 @@ def map_kline_event(raw: dict, symbol: str, market_type: MarketType, interval: s
         symbol=symbol, market_type=market_type, interval=interval,
         open_time=_dt_ms(k["t"]), close_time=_dt_ms(k["T"]),
         open=_dec(k["o"]), high=_dec(k["h"]), low=_dec(k["l"]), close=_dec(k["c"]),
-        volume=_dec(k["v"]), trades=int(k["n"]), closed=bool(k["x"]),
+        volume=_dec(k["v"]), trades=int(k["n"]),
+        taker_buy_base_volume=_taker_buy_from_kline_event(k),
+        closed=bool(k["x"]),
     )
 
 

@@ -1,3 +1,4 @@
+from app.runtime.change_generator import HeuristicChangeGenerator
 from app.runtime.circuit_breaker import CircuitBreaker, CircuitState
 from app.runtime.evolution import EvolutionLoop, NullChangeGenerator
 from app.runtime.heartbeat import HeartbeatMonitor
@@ -11,6 +12,7 @@ __all__ = [
     "CircuitState",
     "EvolutionLoop",
     "HeartbeatMonitor",
+    "HeuristicChangeGenerator",
     "MetricsCollector",
     "NullChangeGenerator",
     "Reconciler",

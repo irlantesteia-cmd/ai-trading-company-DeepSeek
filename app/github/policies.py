@@ -146,10 +146,13 @@ class AutonomyPolicy:
 
 
 def default_policy() -> AutonomyPolicy:
-    """Política conservadora: só `app/strategies/*.py` é editável autonomamente."""
+    """Política conservadora: só `app/strategies/*.py` e
+    `config/evolution/*.json` são editáveis autonomamente.
+    """
     return AutonomyPolicy(
         allowed_globs=[
             "app/strategies/*.py",
+            "config/evolution/*.json",
         ],
         forbidden_globs=[
             ".env",

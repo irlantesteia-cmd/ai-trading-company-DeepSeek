@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 from app.core.enums import MarginType, PositionSide
+from app.domain.models.order import Order
 from app.domain.models.position import FuturesPosition
 
 
@@ -27,4 +30,12 @@ class PositionProvider(ABC):
         self,
         symbol: str,
         position_side: PositionSide | None = None,
-    ) -> None: ...
+    ) -> Order | None:
+        """Fecha a posição e retorna a `Order` de fechamento (com fills).
+
+        Retorna `None` se não havia posição aberta. O `Order` retornado
+        carrega os fills já anexados (via `/fapi/v1/userTrades`), para que
+        chamadores possam publicar `OrderFilled` no bus e manter o
+        `RoundTripAgent` em sincronia.
+        """
+        ...

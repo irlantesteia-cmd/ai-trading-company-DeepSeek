@@ -119,13 +119,14 @@ class HistoryBackfillService:
                 "close": c.close,
                 "volume": c.volume,
                 "trades": c.trades,
+                "taker_buy_base_volume": c.taker_buy_base_volume,
             }
             for c in candles
         ]
 
         async with self._session_factory() as session:
             repo = CandleRepository(session)
-            persisted = await repo.bulk_insert_ignore_conflicts(rows)
+            persisted = await repo.bulk_upsert(rows)
             await session.commit()
 
         logger.info(

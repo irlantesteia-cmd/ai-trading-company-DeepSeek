@@ -17,6 +17,11 @@ class MLSignalGenerator:
     - proba >= long_threshold  → LONG
     - proba <= short_threshold → SHORT
     - caso contrário           → None
+
+    O pipeline pode ser um `FeaturePipeline` puro ou um
+    `CrossAssetPipeline` (ML-3d-1). Nesse segundo caso, `ctx.ref_candles`
+    precisa estar populado pelo chamador (o `AssetAgent` garante isso
+    quando `ref_symbol` é definido).
     """
 
     name = "ml_classifier"
@@ -41,7 +46,9 @@ class MLSignalGenerator:
         self._target_mult = target_atr_mult
 
     def generate(self, ctx: StrategyContext) -> Signal | None:
-        fm = self._pipeline.transform(ctx.candles)
+        # Propaga ref_candles para permitir features cross-asset.
+        # FeaturePipeline puro ignora; CrossAssetPipeline consome.
+        fm = self._pipeline.transform(ctx.candles, ctx.ref_candles)
         if fm.values.shape[0] == 0:
             return None
 
