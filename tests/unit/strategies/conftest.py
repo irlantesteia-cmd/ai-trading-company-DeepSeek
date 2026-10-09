@@ -36,6 +36,7 @@ def make_candles(
                 close=d,
                 volume=Decimal(1),
                 trades=1,
+                taker_buy_base_volume=Decimal("0.5"),
                 closed=True,
             )
         )

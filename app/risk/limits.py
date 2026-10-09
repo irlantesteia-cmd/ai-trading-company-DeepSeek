@@ -10,6 +10,10 @@ class RiskLimits:
 
     Todos os valores monetários em USDT.
     `correlated_groups` mapeia nome do grupo → lista de símbolos mutuamente correlacionados.
+    `max_same_direction` limita quantas posições abertas na **mesma direção**
+    (LONG ou SHORT) o portfólio pode ter simultaneamente — evita concentração
+    direcional quando vários símbolos geram sinal correlacionado no mesmo
+    ciclo.
     """
 
     max_position_notional_per_symbol: Decimal = Decimal(10000)
@@ -17,5 +21,6 @@ class RiskLimits:
     max_leverage: int = 10
     max_daily_loss: Decimal = Decimal(1000)
     max_open_positions: int = 5
+    max_same_direction: int = 2
     min_confidence: float = 0.5
     correlated_groups: dict[str, list[str]] = field(default_factory=dict)

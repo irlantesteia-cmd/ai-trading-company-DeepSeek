@@ -5,10 +5,11 @@ from decimal import Decimal
 from uuid import uuid4
 
 from app.core.enums import MarketRegime, SignalDirection
+from app.core.indicators import atr
 from app.domain.models.signal import Signal
-from app.features.pipeline import FeaturePipeline
+from app.domain.models.strategy_context import StrategyContext
+from app.features.pipeline import FeatureTransformer
 from app.ml.model import ForwardReturnClassifier
-from app.strategies.context import StrategyContext
 
 
 class MLSignalGenerator:
@@ -17,6 +18,11 @@ class MLSignalGenerator:
     - proba >= long_threshold  → LONG
     - proba <= short_threshold → SHORT
     - caso contrário           → None
+
+    O pipeline pode ser um `FeaturePipeline` puro ou um
+    `CrossAssetPipeline` (ML-3d-1). Nesse segundo caso, `ctx.ref_candles`
+    precisa estar populado pelo chamador (o `AssetAgent` garante isso
+    quando `ref_symbol` é definido).
     """
 
     name = "ml_classifier"
@@ -24,7 +30,7 @@ class MLSignalGenerator:
     def __init__(
         self,
         model: ForwardReturnClassifier,
-        pipeline: FeaturePipeline,
+        pipeline: FeatureTransformer,
         *,
         long_threshold: float = 0.6,
         short_threshold: float = 0.4,
@@ -41,7 +47,9 @@ class MLSignalGenerator:
         self._target_mult = target_atr_mult
 
     def generate(self, ctx: StrategyContext) -> Signal | None:
-        fm = self._pipeline.transform(ctx.candles)
+        # Propaga ref_candles para permitir features cross-asset.
+        # FeaturePipeline puro ignora; CrossAssetPipeline consome.
+        fm = self._pipeline.transform(ctx.candles, ctx.ref_candles)
         if fm.values.shape[0] == 0:
             return None
 
@@ -90,8 +98,6 @@ class MLSignalGenerator:
 
     @staticmethod
     def _compute_last_atr(ctx: StrategyContext) -> Decimal:
-        from app.strategies.indicators import atr
-
         highs = [float(c.high) for c in ctx.candles]
         lows = [float(c.low) for c in ctx.candles]
         closes = [float(c.close) for c in ctx.candles]

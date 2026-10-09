@@ -13,9 +13,9 @@ from app.core.enums import (
 )
 from app.domain.models.market import Candle
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.events.event import CandleClosed, Event, SignalGenerated
 from app.strategies.base import Strategy
-from app.strategies.context import StrategyContext
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 class AssetAgent(BaseAgent):
     """Agente especializado em um único ativo.
 
-    Se receber uma `strategy`, `analyze()` busca candles via `_fetch_candles()`
-    e delega a geração do sinal à estratégia. Caso contrário, retorna None.
+    Se `ref_symbol` for definido, `analyze()` também busca candles do
+    ativo de referência (ex.: BTC para alts) e os inclui em
+    `StrategyContext.ref_candles` — permitindo features cross-asset.
     """
 
     role = AgentRole.ASSET
@@ -38,6 +39,7 @@ class AssetAgent(BaseAgent):
         interval: str = "5m",
         strategy: Strategy | None = None,
         lookback: int = 200,
+        ref_symbol: str | None = None,
     ) -> None:
         super().__init__(context)
         self.symbol = symbol
@@ -45,6 +47,7 @@ class AssetAgent(BaseAgent):
         self.interval = interval
         self.strategy = strategy
         self.lookback = lookback
+        self.ref_symbol = ref_symbol
         self.name = f"asset::{symbol}"
 
     # ------------------------------------------------------------- análise
@@ -54,21 +57,47 @@ class AssetAgent(BaseAgent):
         candles = await self._fetch_candles()
         if len(candles) < self.strategy.warmup:
             return None
+
+        ref_candles: dict[str, list[Candle]] = {}
+        if self.ref_symbol is not None:
+            try:
+                ref = await self._fetch_candles_for(self.ref_symbol)
+            except Exception:
+                logger.exception(
+                    "asset.ref_fetch_failed",
+                    extra={"symbol": self.symbol, "ref_symbol": self.ref_symbol},
+                )
+                return None
+            if not ref:
+                logger.warning(
+                    "asset.ref_empty",
+                    extra={"symbol": self.symbol, "ref_symbol": self.ref_symbol},
+                )
+                return None
+            ref_candles[self.ref_symbol] = ref
+
         ctx = StrategyContext(
             symbol=self.symbol,
             market_type=self.market_type,
             interval=self.interval,
             candles=candles,
+            ref_candles=ref_candles,
         )
         return self.strategy.generate(ctx)
 
     async def _fetch_candles(self) -> list[Candle]:
-        return await self.context.exchange.market_data.get_candles(
-            self.symbol,
+        return await self._fetch_candles_for(self.symbol)
+
+    async def _fetch_candles_for(self, symbol: str) -> list[Candle]:
+        """Candles fechados apenas: o REST inclui a barra em andamento no fim,
+        e o modelo foi treinado só com barras fechadas."""
+        candles = await self.context.exchange.market_data.get_candles(
+            symbol,
             self.interval,
             self.market_type,
             limit=self.lookback,
         )
+        return [c for c in candles if c.closed]
 
     # ------------------------------------------------------ subscriptions
     def subscriptions(self) -> dict[type[Event], EventHandler]:
@@ -92,6 +121,7 @@ class AssetAgent(BaseAgent):
                 agent=signal.agent,
                 direction=signal.direction.value,
                 confidence=signal.confidence,
+                signal=signal,
             )
         )
         return signal

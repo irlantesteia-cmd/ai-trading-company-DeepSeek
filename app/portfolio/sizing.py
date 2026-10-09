@@ -10,21 +10,10 @@ from app.domain.models.signal import Signal
 from app.portfolio.state import PortfolioState
 
 logger = logging.getLogger(__name__)
-
-_QTY_STEP = Decimal("0.00000001")  # 8 casas — chão seguro; a Binance arredonda ao step real
+_QTY_STEP = Decimal("0.00000001")
 
 
 class PositionSizer:
-    """Dimensiona a ordem por risco-por-trade.
-
-        qty = (equity * risk_per_trade_pct) / |entry - stop|
-
-    Aplicado ainda um teto de notional por símbolo:
-        qty <= max_notional_per_symbol / entry
-
-    `suggested_stop` ausente → usa `default_stop_pct` sobre `entry`.
-    """
-
     def __init__(
         self,
         *,
@@ -36,23 +25,11 @@ class PositionSizer:
         self._default_stop_pct = Decimal(str(default_stop_pct))
         self._max_notional = max_notional_per_symbol
 
-    @property
-    def risk_pct(self) -> Decimal:
-        return self._risk_pct
-
-    @property
-    def max_notional(self) -> Decimal:
-        return self._max_notional
-
-    def size(
-        self,
-        signal: Signal,
-        decision: RiskDecision,
-        state: PortfolioState,
-    ) -> OrderIntent:
+    def size(self, signal: Signal, decision: RiskDecision, state: PortfolioState) -> OrderIntent:
         if decision.action.value != "APPROVE":
             raise ValueError(f"sizing requer decision APPROVE, got {decision.action}")
-
+        if state.equity <= 0:
+            raise ValueError(f"equity do portfólio é {state.equity}; verifique o saldo")
         if signal.suggested_entry is None:
             raise ValueError("Signal sem suggested_entry")
 
@@ -68,49 +45,21 @@ class PositionSizer:
 
         stop_distance = abs(entry - stop)
         if stop_distance == 0:
-            raise ValueError("stop == entry; impossível dimensionar")
+            raise ValueError("stop == entry")
 
         risk_amount = state.equity * self._risk_pct
         raw_qty = risk_amount / stop_distance
-
-        max_qty_by_notional = self._max_notional / entry
-        quantity = min(raw_qty, max_qty_by_notional)
-        quantity = quantity.quantize(_QTY_STEP, rounding=ROUND_DOWN)
-
+        max_qty = self._max_notional / entry
+        quantity = min(raw_qty, max_qty).quantize(_QTY_STEP, rounding=ROUND_DOWN)
         if quantity <= 0:
-            raise ValueError(
-                f"quantidade calculada <= 0 (raw={raw_qty}, cap={max_qty_by_notional})"
-            )
+            raise ValueError(f"quantidade <= 0 (raw={raw_qty}, cap={max_qty})")
 
-        side = (
-            OrderSide.BUY
-            if signal.direction == SignalDirection.LONG
-            else OrderSide.SELL
-        )
-
-        logger.info(
-            "sizing.computed",
-            extra={
-                "symbol": signal.symbol,
-                "equity": str(state.equity),
-                "entry": str(entry),
-                "stop": str(stop),
-                "risk_amount": str(risk_amount),
-                "quantity": str(quantity),
-            },
-        )
-
+        side = OrderSide.BUY if signal.direction == SignalDirection.LONG else OrderSide.SELL
         return OrderIntent(
-            signal_id=signal.signal_id,
-            symbol=signal.symbol,
-            market_type=signal.market_type,
-            side=side,
-            quantity=quantity,
-            order_type=OrderType.MARKET,
-            stop_price=stop,
-            reason=(
-                f"risk_pct={self._risk_pct} entry={entry} stop={stop} "
-                f"max_notional={self._max_notional}"
-            ),
+            signal_id=signal.signal_id, symbol=signal.symbol,
+            market_type=signal.market_type, side=side,
+            quantity=quantity, order_type=OrderType.MARKET, stop_price=stop,
+            target_price=signal.suggested_target,
+            reason=f"risk_pct={self._risk_pct} entry={entry} stop={stop}",
             agent="portfolio_manager",
         )

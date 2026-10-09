@@ -18,8 +18,9 @@ class RiskEngine:
         1. confidence >= min_confidence
         2. daily_pnl > -max_daily_loss
         3. open_positions_count < max_open_positions
-        4. não há posição já aberta no mesmo símbolo
-        5. nenhum símbolo correlacionado já tem posição
+        4. nenhuma direção com `max_same_direction` posições abertas
+        5. não há posição já aberta no mesmo símbolo
+        6. nenhum símbolo correlacionado já tem posição
     """
 
     def __init__(self, limits: RiskLimits) -> None:
@@ -49,6 +50,14 @@ class RiskEngine:
             return self._reject(
                 signal,
                 f"max_open_positions={limits.max_open_positions} atingido",
+            )
+
+        current_in_direction = state.count_in_direction(signal.direction)
+        if current_in_direction >= limits.max_same_direction:
+            return self._reject(
+                signal,
+                f"max_same_direction={limits.max_same_direction} atingido "
+                f"para {signal.direction} (atual={current_in_direction})",
             )
 
         if state.has_position(signal.symbol):

@@ -8,8 +8,8 @@ from app.backtest.engine import BacktestEngine
 from app.backtest.types import BacktestConfig
 from app.core.enums import MarketType, SignalDirection
 from app.domain.models.signal import Signal
+from app.domain.models.strategy_context import StrategyContext
 from app.strategies.base import Strategy
-from app.strategies.context import StrategyContext
 from tests.unit.strategies.conftest import make_candles
 
 

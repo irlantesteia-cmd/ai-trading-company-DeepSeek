@@ -19,6 +19,7 @@ class OrderIntent(DomainModel):
     order_type: OrderType = OrderType.MARKET
     price: Decimal | None = None
     stop_price: Decimal | None = None
+    target_price: Decimal | None = None
     take_profit: Decimal | None = None
     reason: str = ""
     agent: str = ""

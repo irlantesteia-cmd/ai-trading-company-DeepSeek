@@ -56,7 +56,7 @@ class HistoryBackfillService:
 
         for symbol in symbols:
             try:
-                report = await self._backfill_one(
+                counts = await self._backfill_one(
                     symbol=symbol,
                     interval=interval,
                     market_type=market_type,
@@ -70,8 +70,8 @@ class HistoryBackfillService:
                 continue
 
             processed += 1
-            total_fetched += report["fetched"]
-            total_persisted += report["persisted"]
+            total_fetched += counts["fetched"]
+            total_persisted += counts["persisted"]
 
         report = BackfillReport(
             symbols_processed=processed,
@@ -103,6 +103,8 @@ class HistoryBackfillService:
             market_type=market_type,
             limit=limit,
         )
+        # A barra em andamento (último item do REST) tem OHLCV parcial.
+        candles = [c for c in candles if c.closed]
         if not candles:
             return {"fetched": 0, "persisted": 0}
 
@@ -119,13 +121,14 @@ class HistoryBackfillService:
                 "close": c.close,
                 "volume": c.volume,
                 "trades": c.trades,
+                "taker_buy_base_volume": c.taker_buy_base_volume,
             }
             for c in candles
         ]
 
         async with self._session_factory() as session:
             repo = CandleRepository(session)
-            persisted = await repo.bulk_insert_ignore_conflicts(rows)
+            persisted = await repo.bulk_upsert(rows)
             await session.commit()
 
         logger.info(

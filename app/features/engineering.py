@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from math import log
 
-from app.strategies.indicators import ema, rolling_std
+from app.core.indicators import atr, ema, rolling_std
 
 
 def return_n(closes: Sequence[float], n: int) -> list[float | None]:
@@ -64,10 +64,10 @@ def rsi(closes: Sequence[float], period: int = 14) -> list[float | None]:
     avg_gain = sum(gains[1 : period + 1]) / period
     avg_loss = sum(losses[1 : period + 1]) / period
 
-    def _rsi(g: float, l: float) -> float:
-        if l == 0:
+    def _rsi(gain: float, loss: float) -> float:
+        if loss == 0:
             return 100.0
-        rs = g / l
+        rs = gain / loss
         return 100.0 - 100.0 / (1.0 + rs)
 
     out[period] = _rsi(avg_gain, avg_loss)
@@ -98,9 +98,10 @@ def ema_distance(closes: Sequence[float], period: int) -> list[float | None]:
     e = ema(closes, period)
     out: list[float | None] = [None] * len(closes)
     for i in range(len(closes)):
-        if e[i] is None or closes[i] == 0:
+        ema_i = e[i]
+        if ema_i is None or closes[i] == 0:
             continue
-        out[i] = (closes[i] - e[i]) / closes[i]
+        out[i] = (closes[i] - ema_i) / closes[i]
     return out
 
 
@@ -111,14 +112,13 @@ def atr_normalized(
     period: int = 14,
 ) -> list[float | None]:
     """ATR(period) / close[i]."""
-    from app.strategies.indicators import atr  # evita import circular na carga do módulo
-
     a = atr(highs, lows, closes, period)
     out: list[float | None] = [None] * len(closes)
     for i in range(len(closes)):
-        if a[i] is None or closes[i] == 0:
+        atr_i = a[i]
+        if atr_i is None or closes[i] == 0:
             continue
-        out[i] = a[i] / closes[i]
+        out[i] = atr_i / closes[i]
     return out
 
 
@@ -132,6 +132,32 @@ def high_low_range(
         if closes[i] == 0:
             continue
         out[i] = (highs[i] - lows[i]) / closes[i]
+    return out
+
+
+def taker_buy_ratio(
+    volumes: Sequence[float],
+    taker_buys: Sequence[float | None],
+) -> list[float | None]:
+    """Fração do volume agressor (taker buy) no candle: taker_buy / volume.
+
+    Causal no mesmo candle fechado. `None` se volume <= 0 ou taker ausente.
+    Valores fora de [0, 1] (arredondamento da exchange) são clipados.
+    """
+    if len(volumes) != len(taker_buys):
+        raise ValueError("volumes e taker_buys devem ter o mesmo comprimento")
+    out: list[float | None] = [None] * len(volumes)
+    for i, vol in enumerate(volumes):
+        tb = taker_buys[i]
+        if tb is None or vol <= 0:
+            continue
+        ratio = tb / vol
+        if ratio < 0.0:
+            out[i] = 0.0
+        elif ratio > 1.0:
+            out[i] = 1.0
+        else:
+            out[i] = ratio
     return out
 
 

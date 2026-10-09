@@ -27,9 +27,16 @@ def test_training_end_to_end_produces_metrics():
 
     assert result.model.is_fitted
     assert result.metadata.symbol == "BTCUSDT"
-    assert result.metadata.n_train + result.metadata.n_test == len(ds)
+    # Partição completa: treino + teste + purgadas == dataset.
+    assert (
+        result.metadata.n_train + result.metadata.n_test + result.metadata.n_purged
+        == len(ds)
+    )
+    assert result.metadata.n_purged == ds.horizon
     assert 0.0 <= result.test_accuracy <= 1.0
     assert "auc" in result.test_metrics
+    assert "baseline_auc" in result.test_metrics
+    assert "baseline_accuracy" in result.test_metrics
 
 
 def test_training_reproducible():

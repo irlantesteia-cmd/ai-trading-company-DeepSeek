@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from app.core.config import settings
 from app.core.enums import MarketType
 from app.core.exceptions import ExchangeError
@@ -32,7 +34,12 @@ class BinanceAdapter(Exchange):
         api_key: str | None = None,
         api_secret: str | None = None,
         testnet: bool | None = None,
+        orders_wrapper: Callable[[OrderProvider], OrderProvider] | None = None,
     ) -> None:
+        """`orders_wrapper` envolve o provider de ordens antes de ele ser
+        compartilhado com `positions` (ex.: `RecordingOrderProvider`), para que
+        o fechamento de posição passe pelo mesmo caminho que as entradas.
+        """
         testnet = settings.binance_testnet if testnet is None else testnet
         self._client = BinanceClient(
             api_key or settings.binance_api_key,
@@ -54,7 +61,10 @@ class BinanceAdapter(Exchange):
             MarketType.FUTURES: WS_FUTURES_TESTNET if testnet else WS_FUTURES_PROD,
         }
 
-        self._orders = BinanceOrderProvider(self._client)
+        orders: OrderProvider = BinanceOrderProvider(self._client)
+        if orders_wrapper is not None:
+            orders = orders_wrapper(orders)
+        self._orders = orders
         self._market_data = BinanceMarketDataProvider(
             self._client,
             self._ws,

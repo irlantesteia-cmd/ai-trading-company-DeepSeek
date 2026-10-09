@@ -1,7 +1,7 @@
 import pytest
 
 from app.core.enums import MarketType, SignalDirection
-from app.strategies.context import StrategyContext
+from app.domain.models.strategy_context import StrategyContext
 from app.strategies.momentum import MomentumStrategy
 from tests.unit.strategies.conftest import make_candles
 

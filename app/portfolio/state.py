@@ -36,3 +36,15 @@ class PortfolioState(DomainModel):
 
     def symbols(self) -> set[str]:
         return {p.symbol for p in self.open_positions}
+
+    def count_in_direction(self, direction: str) -> int:
+        """Conta posições abertas na direção `LONG` ou `SHORT`.
+
+        `direction` é o valor textual (`PositionSide.LONG.value` /
+        `PositionSide.SHORT.value`). Case-sensitive por design.
+        """
+        return sum(
+            1
+            for p in self.open_positions
+            if p.position_side.value == direction
+        )

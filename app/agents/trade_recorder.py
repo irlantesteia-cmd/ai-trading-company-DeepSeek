@@ -1,9 +1,11 @@
 """Persiste fills de ordens como `TradeORM`.
 
-Ouve `OrderFilled` (publicado pelo `ExecutionAgent` quando o `place_order`
-já retorna fills) e escreve uma linha em `trades` por fill. Este é o elo
-que fecha o ciclo de dados: sem ele, o `MetricsCollector` lê de um DB
-vazio e sempre retorna métricas zeradas.
+Ouve `OrderFilled` (publicado pelo `ExecutionAgent` ou pelo UDS) e escreve
+uma linha em `trades` por fill. Idempotente via `trade_id`.
+
+Também liga cada fill ao ciclo correspondente (`round_trip_id` + `role`),
+consumindo `RoundTripAssigned` (publicado pelo `RoundTripAgent`) num cache
+em memória `{order_id: (round_trip_id, role)}`.
 """
 
 from __future__ import annotations
@@ -13,26 +15,41 @@ import logging
 from sqlalchemy.exc import IntegrityError
 
 from app.agents.base import BaseAgent, EventHandler
-from app.core.enums import AgentRole
+from app.core.enums import AgentRole, TradeRole
 from app.database.models.trade import TradeORM
-from app.events.event import Event, OrderFilled
+from app.domain.models.order import Order, OrderFill
+from app.events.event import Event, OrderFilled, RoundTripAssigned
 
 logger = logging.getLogger(__name__)
 
 
 class TradeRecorderAgent(BaseAgent):
-    """Persiste cada `OrderFill` como uma linha em `trades`.
-
-    Idempotente: o `trade_id` é determinístico (`{exchange_order_id}-{i}`).
-    Reentrega do mesmo evento gera `IntegrityError` no commit, capturado e
-    tratado como duplicata (rollback + log).
-    """
+    """Persiste cada `OrderFill` como uma linha em `trades`."""
 
     role = AgentRole.AUDITOR
     name = "trade_recorder"
 
+    def __init__(self, context) -> None:
+        super().__init__(context)
+        # order_id -> (round_trip_id | None, role)
+        self._assignments: dict[str, tuple[str | None, str]] = {}
+
     def subscriptions(self) -> dict[type[Event], EventHandler]:
-        return {OrderFilled: self._on_order_filled}
+        return {
+            OrderFilled: self._on_order_filled,
+            RoundTripAssigned: self._on_round_trip_assigned,
+        }
+
+    @staticmethod
+    def _trade_id(order: Order, fill: OrderFill, index: int) -> str:
+        if fill.trade_id:
+            return f"{order.exchange_order_id}-{fill.trade_id}"
+        return f"{order.exchange_order_id}-{index}"
+
+    async def _on_round_trip_assigned(self, event: Event) -> None:
+        if not isinstance(event, RoundTripAssigned):
+            return
+        self._assignments[event.order_id] = (event.round_trip_id, event.role)
 
     async def _on_order_filled(self, event: Event) -> None:
         if not isinstance(event, OrderFilled):
@@ -60,9 +77,13 @@ class TradeRecorderAgent(BaseAgent):
             )
             return
 
+        round_trip_id, role = self._assignments.pop(
+            order.exchange_order_id, (None, TradeRole.UNKNOWN.value)
+        )
+
         rows = [
             TradeORM(
-                trade_id=f"{order.exchange_order_id}-{i}",
+                trade_id=self._trade_id(order, fill, i),
                 order_id=order.exchange_order_id,
                 symbol=order.symbol,
                 market_type=order.market_type.value,
@@ -76,6 +97,8 @@ class TradeRecorderAgent(BaseAgent):
                 fee_asset=fill.commission_asset,
                 realized_pnl=None,
                 executed_at=fill.timestamp,
+                round_trip_id=round_trip_id,
+                role=role,
             )
             for i, fill in enumerate(order.fills)
         ]
@@ -87,7 +110,7 @@ class TradeRecorderAgent(BaseAgent):
                 await session.commit()
             except IntegrityError:
                 await session.rollback()
-                logger.warning(
+                logger.debug(
                     "trade_recorder.duplicate_skipped",
                     extra={
                         "order_id": order.exchange_order_id,
@@ -102,5 +125,7 @@ class TradeRecorderAgent(BaseAgent):
                 "order_id": order.exchange_order_id,
                 "symbol": order.symbol,
                 "num_fills": len(rows),
+                "round_trip_id": round_trip_id,
+                "role": role,
             },
         )
