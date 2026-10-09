@@ -15,16 +15,16 @@ from app.core.enums import (
 )
 from app.core.exceptions import ExchangeError
 from app.domain.models.order import Order, OrderRequest
+from app.exchanges.base.orders import OrderProvider
 from app.exchanges.base.positions import PositionProvider
 from app.exchanges.binance.client import BinanceClient
 from app.exchanges.binance.mappers import map_futures_position
-from app.exchanges.binance.orders import BinanceOrderProvider
 
 logger = logging.getLogger(__name__)
 
 
 class BinancePositionProvider(PositionProvider):
-    def __init__(self, client: BinanceClient, orders: BinanceOrderProvider) -> None:
+    def __init__(self, client: BinanceClient, orders: OrderProvider) -> None:
         self._client = client
         self._orders = orders
         self._is_hedge_mode: bool | None = None

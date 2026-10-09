@@ -29,6 +29,8 @@ class OrderORM(Base, TimestampMixin):
     reduce_only: Mapped[bool] = mapped_column(default=False)
     position_side: Mapped[str | None] = mapped_column(String(8), nullable=True)
     exchange_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Ordem algo (SL/TP): `exchange_order_id` é o algoId.
+    is_conditional: Mapped[bool] = mapped_column(default=False)
 
     fills: Mapped[list["OrderFillORM"]] = relationship(
         back_populates="order",
