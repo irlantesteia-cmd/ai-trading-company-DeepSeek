@@ -1,0 +1,12 @@
+# Dashboards versionados em docker/grafana/dashboards/. Edições feitas na UI
+# não sobrescrevem o arquivo: exporte o JSON e atualize o repositório.
+apiVersion: 1
+
+providers:
+  - name: trading
+    folder: Trading
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
