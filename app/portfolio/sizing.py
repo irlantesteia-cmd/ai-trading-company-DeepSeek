@@ -60,6 +60,7 @@ class PositionSizer:
             market_type=signal.market_type, side=side,
             quantity=quantity, order_type=OrderType.MARKET, stop_price=stop,
             target_price=signal.suggested_target,
+            reference_price=entry,
             reason=f"risk_pct={self._risk_pct} entry={entry} stop={stop}",
             agent="portfolio_manager",
         )

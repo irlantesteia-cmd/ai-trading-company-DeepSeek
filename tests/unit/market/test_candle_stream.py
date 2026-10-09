@@ -32,7 +32,11 @@ def _candle(*, open_time: datetime) -> Candle:
     )
 
 
-def _service(candles: list[Candle]) -> tuple[CandleStreamService, EventBus, MagicMock]:
+def _service(
+    candles: list[Candle], *, max_emit_lag_s: float = 0
+) -> tuple[CandleStreamService, EventBus, MagicMock]:
+    """`max_emit_lag_s=0` desliga o filtro de atraso: os candles destes testes
+    fecham horas antes de `NOW`. O filtro tem testes próprios abaixo."""
     exchange = MagicMock()
     exchange.market_data.get_candles = AsyncMock(return_value=candles)
     bus = EventBus()
@@ -43,6 +47,7 @@ def _service(candles: list[Candle]) -> tuple[CandleStreamService, EventBus, Magi
         interval="5m",
         market_type=MarketType.FUTURES,
         poll_interval_s=0.01,
+        max_emit_lag_s=max_emit_lag_s,
     )
     return svc, bus, exchange
 
@@ -183,3 +188,44 @@ def test_exposes_symbol_and_interval():
     svc, _, _ = _service([])
     assert svc.symbol == "BTCUSDT"
     assert svc.interval == "5m"
+
+
+# ------------------------------------------------ filtro de candle atrasado
+@pytest.mark.asyncio
+async def test_stale_candle_is_skipped_and_not_emitted_later():
+    open_time = NOW - timedelta(minutes=9)  # fechou há 4 min (volta de suspensão)
+    svc, bus, _ = _service([_candle(open_time=open_time)], max_emit_lag_s=90)
+    received = await _collect(bus)
+
+    assert await svc.poll_once(now=NOW) is None
+    assert received == []
+    # Marcado como visto: não é emitido no próximo poll.
+    assert svc.last_emitted_open_time == open_time
+    assert await svc.poll_once(now=NOW + timedelta(seconds=30)) is None
+
+
+@pytest.mark.asyncio
+async def test_fresh_candle_is_emitted():
+    open_time = NOW - timedelta(minutes=5, seconds=20)  # fechou há 20 s
+    svc, bus, _ = _service([_candle(open_time=open_time)], max_emit_lag_s=90)
+    received = await _collect(bus)
+
+    assert await svc.poll_once(now=NOW) is not None
+    assert len(received) == 1
+
+
+@pytest.mark.asyncio
+async def test_next_fresh_candle_after_stale_is_emitted():
+    stale = NOW - timedelta(minutes=9)
+    fresh = stale + timedelta(minutes=5)
+    svc, bus, exchange = _service([_candle(open_time=stale)], max_emit_lag_s=90)
+    received = await _collect(bus)
+    await svc.poll_once(now=NOW)
+
+    exchange.market_data.get_candles = AsyncMock(
+        return_value=[_candle(open_time=stale), _candle(open_time=fresh)]
+    )
+    later = fresh + timedelta(minutes=5, seconds=10)
+    assert await svc.poll_once(now=later) is not None
+    assert len(received) == 1
+    assert svc.last_emitted_open_time == fresh

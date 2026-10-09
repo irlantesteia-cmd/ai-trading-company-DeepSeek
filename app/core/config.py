@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # Candle stream
     candle_stream_enabled: bool = True
     candle_stream_interval_s: float = 30.0
+    # Candle fechado há mais que isto não gera CandleClosed (ex.: volta de
+    # suspensão do PC, boot): o sinal sairia com dados velhos.
+    candle_max_emit_lag_s: float = 90.0
 
     # Auto-execução (default OFF)
     signal_auto_execution_enabled: bool = False
@@ -55,6 +58,9 @@ class Settings(BaseSettings):
 
     # Ao fechar posição, cancelar SL/TP pendentes antes (evita órfãs).
     cancel_protective_orders_on_close: bool = True
+    # Se o stop-loss não puder ser criado, fecha a posição na hora em vez de
+    # deixá-la sem proteção.
+    close_on_stop_loss_failure: bool = True
 
     # Quando um SL/TP dispara, cancelar o(s) irmão(s) pendente(s) do mesmo
     # símbolo. Sem isso, o irmão fica órfão até o próximo close/reconcile.
