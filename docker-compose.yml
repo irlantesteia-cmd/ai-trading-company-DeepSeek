@@ -66,7 +66,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: "no"
+    # Reinicia só se o bot cair com erro (até 5x). `unless-stopped`/`always`
+    # religariam o bot ao iniciar o Docker (ex.: após reboot do PC), e com
+    # auto-execução ligada ele voltaria a operar sem ninguém pedir.
+    restart: "on-failure:5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 volumes:
   postgres_data:
