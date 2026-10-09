@@ -183,3 +183,16 @@ def test_adapter_shares_wrapped_orders_with_positions():
     assert adapter.orders is wrapped[0]
     # close_position usa o mesmo provider, então também grava.
     assert adapter.positions._orders is wrapped[0]  # type: ignore[attr-defined]
+
+
+async def test_conditional_queries_are_recorded_as_conditional():
+    inner = _inner()
+    inner.get_conditional_order = AsyncMock(return_value=_order(OrderStatus.FILLED, "tp-1"))
+    inner.list_open_conditional_orders = AsyncMock(return_value=[])
+    recorder = _FakeRecorder()
+    provider = RecordingOrderProvider(inner, recorder)  # type: ignore[arg-type]
+
+    await provider.get_conditional_order("BTCUSDT", "123")
+    assert await provider.list_open_conditional_orders("BTCUSDT") == []
+
+    assert [(o.client_order_id, cond) for o, cond in recorder.records] == [("tp-1", True)]

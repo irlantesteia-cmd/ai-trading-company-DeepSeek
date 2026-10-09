@@ -10,6 +10,7 @@ from app.domain.models.order import Order, OrderRequest
 from app.exchanges.base.orders import OrderProvider
 from app.exchanges.binance.client import BinanceClient
 from app.exchanges.binance.mappers import (
+    map_algo_order,
     map_order,
     map_user_trade,
     order_request_to_algo_params,
@@ -171,13 +172,27 @@ class BinanceOrderProvider(OrderProvider):
         orders: list[Order] = []
         for o in orders_raw:
             try:
-                orders.append(map_order(o, MarketType.FUTURES))
+                orders.append(map_algo_order(o))
             except Exception:
                 logger.exception(
                     "binance.list_open_algo_orders_parse_failed",
                     extra={"symbol": symbol, "raw": str(o)[:200]},
                 )
         return orders
+
+    async def list_open_conditional_orders(self, symbol: str | None) -> list[Order]:
+        return await self.list_open_algo_orders(symbol)
+
+    async def get_conditional_order(self, symbol: str, exchange_order_id: str) -> Order:
+        """Consulta uma ordem algo pelo `algoId` (`GET /fapi/v1/algoOrder`)."""
+        raw = await self._client.request(
+            "GET",
+            _ALGO_PATH_FUTURES,
+            market_type=MarketType.FUTURES,
+            signed=True,
+            params={"symbol": symbol, "algoId": exchange_order_id},
+        )
+        return map_algo_order(raw)
 
     async def cancel_algo_order(self, symbol: str, algo_id: str) -> None:
         """Cancela uma ordem condicional via `DELETE /fapi/v1/algoOrder`."""

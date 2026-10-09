@@ -44,3 +44,13 @@ class OrderProvider(ABC):
         raise NotImplementedError(
             f"{type(self).__name__} não suporta ordens condicionais"
         )
+
+    async def list_open_conditional_orders(self, symbol: str | None) -> list[Order]:
+        raise NotImplementedError(
+            f"{type(self).__name__} não suporta ordens condicionais"
+        )
+
+    async def get_conditional_order(self, symbol: str, exchange_order_id: str) -> Order:
+        raise NotImplementedError(
+            f"{type(self).__name__} não suporta ordens condicionais"
+        )

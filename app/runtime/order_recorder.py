@@ -133,6 +133,14 @@ class RecordingOrderProvider(OrderProvider):
     async def cancel_all_algo_orders(self, symbol: str) -> int:
         return await self._inner.cancel_all_algo_orders(symbol)
 
+    async def list_open_conditional_orders(self, symbol: str | None) -> list[Order]:
+        return await self._inner.list_open_conditional_orders(symbol)
+
+    async def get_conditional_order(self, symbol: str, exchange_order_id: str) -> Order:
+        order = await self._inner.get_conditional_order(symbol, exchange_order_id)
+        await self._recorder.record(order, is_conditional=True)
+        return order
+
     def __getattr__(self, name: str) -> Any:
         # Métodos específicos do provider (ex.: `list_open_algo_orders`).
         if name == "_inner":  # ainda não inicializado: evita recursão
