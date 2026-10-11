@@ -9,6 +9,8 @@ Uso (PowerShell):
     python scripts/strategy_lab.py --strategy momentum --intervals 5m,15m,1h --days 180
     python scripts/strategy_lab.py --strategy momentum --hold-bars 6 --fee maker
     python scripts/strategy_lab.py --strategy momentum --param stop_atr_mult=2 --param target_atr_mult=4
+    python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 \
+        --trailing-stop --funding --symbols BTCUSDT,ETHUSDT,SOLUSDT
 """
 
 from __future__ import annotations
@@ -57,6 +59,10 @@ def parse_args(argv: list[str] | None = None) -> LabConfig:
                    help="taker (5/5 bps), maker (2/5 bps) ou bps por lado")
     p.add_argument("--slippage-bps", type=float, default=2.0)
     p.add_argument("--hold-bars", type=int, default=0, help="saída por tempo em barras (0 = não)")
+    p.add_argument("--trailing-stop", action="store_true",
+                   help="stop móvel mantendo a distância inicial (estratégias de tendência)")
+    p.add_argument("--funding", action="store_true",
+                   help="desconta o funding real liquidado durante cada trade")
     p.add_argument("--notional-cap", type=float, default=2000.0)
     p.add_argument("--param", type=_param, action="append", default=[],
                    help="parâmetro da estratégia (repetível), ex.: stop_atr_mult=2")
@@ -73,6 +79,8 @@ def parse_args(argv: list[str] | None = None) -> LabConfig:
         exit_fee_bps=a.fee[1],
         slippage_bps=a.slippage_bps,
         hold_bars=a.hold_bars,
+        trailing_stop=a.trailing_stop,
+        funding=a.funding,
         max_position_notional=a.notional_cap,
         folds=a.folds,
         seed=a.seed,

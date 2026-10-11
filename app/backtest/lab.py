@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.backtest.data import load_candles
+from app.backtest.data import load_candles, load_funding
 from app.backtest.engine import BacktestEngine
 from app.backtest.gate import GateCriteria, GateVerdict, evaluate_gate
 from app.backtest.regime import classify_regimes
@@ -26,10 +26,12 @@ from app.core.enums import MarketType
 from app.domain.models.market import Candle
 from app.strategies import MeanReversionStrategy, MomentumStrategy
 from app.strategies.base import Strategy
+from app.strategies.trend_breakout import TrendBreakoutStrategy
 
 STRATEGIES: dict[str, type[Strategy]] = {
     "momentum": MomentumStrategy,
     "mean_reversion": MeanReversionStrategy,
+    "trend_breakout": TrendBreakoutStrategy,
 }
 
 LIMITATIONS = [
@@ -39,9 +41,14 @@ LIMITATIONS = [
     ),
     "Stop e alvo na mesma barra contam como stop (pessimista).",
     "Médias por trade em % do notional; o drawdown é o pior entre as execuções.",
+    (
+        "Funding (quando ligado) usa as taxas reais liquidadas durante o trade "
+        "sobre o notional de entrada; o funding real usa o notional no momento."
+    ),
 ]
 
 CandleLoader = Callable[[str, str, float], Awaitable[list[Candle]]]
+FundingLoader = Callable[[str, float], Awaitable[list[tuple[int, float]]]]
 
 
 class LabConfig(BaseModel):
@@ -54,6 +61,8 @@ class LabConfig(BaseModel):
     exit_fee_bps: float = 5.0
     slippage_bps: float = 2.0
     hold_bars: int = 0
+    trailing_stop: bool = False
+    funding: bool = False
     max_position_notional: float | None = 2000.0
     initial_capital: float = 3000.0
     risk_per_trade_pct: float = 0.01
@@ -104,8 +113,19 @@ async def _default_loader(symbol: str, interval: str, days: float) -> list[Candl
     return await load_candles(symbol, interval, days=days)
 
 
-async def run_lab(config: LabConfig, *, loader: CandleLoader | None = None) -> LabReport:
+async def _default_funding_loader(symbol: str, days: float) -> list[tuple[int, float]]:
+    return await load_funding(symbol, days=days)
+
+
+async def run_lab(
+    config: LabConfig,
+    *,
+    loader: CandleLoader | None = None,
+    funding_loader: FundingLoader | None = None,
+) -> LabReport:
     load = loader or _default_loader
+    load_fund = funding_loader or _default_funding_loader
+    funding_cache: dict[str, list[tuple[int, float]]] = {}
     engine = BacktestEngine(
         BacktestConfig(
             initial_capital=Decimal(str(config.initial_capital)),
@@ -114,6 +134,7 @@ async def run_lab(config: LabConfig, *, loader: CandleLoader | None = None) -> L
             exit_fee_bps=config.exit_fee_bps,
             slippage_bps=config.slippage_bps,
             max_holding_bars=config.hold_bars,
+            trailing_stop=config.trailing_stop,
             max_position_notional=(
                 Decimal(str(config.max_position_notional))
                 if config.max_position_notional is not None
@@ -131,6 +152,11 @@ async def run_lab(config: LabConfig, *, loader: CandleLoader | None = None) -> L
             if not candles:
                 continue
             strategy = build_strategy(config.strategy, config.params)
+            funding = None
+            if config.funding:
+                if symbol not in funding_cache:
+                    funding_cache[symbol] = await load_fund(symbol, config.days)
+                funding = funding_cache[symbol]
             result = engine.run(
                 symbol=symbol,
                 interval=interval,
@@ -138,6 +164,7 @@ async def run_lab(config: LabConfig, *, loader: CandleLoader | None = None) -> L
                 candles=candles,
                 strategy=strategy,
                 regimes=classify_regimes(candles),
+                funding_rates=funding,
             )
             trades.extend(result.trades)
             starts.append(candles[0].open_time)
@@ -190,11 +217,14 @@ def _row(label: str, s: TradeStats) -> str:
     pf = "inf" if s.profit_factor == float("inf") else f"{s.profit_factor:.2f}"
     return (
         f"| {label} | {s.trades} | {100 * s.win_rate:.1f}% | {s.avg_gross_pct:+.3f}% "
-        f"| {s.avg_cost_pct:.3f}% | {s.avg_net_pct:+.3f}% | {pf} |"
+        f"| {s.avg_cost_pct:.3f}% | {s.avg_funding_pct:+.3f}% | {s.avg_net_pct:+.3f}% | {pf} |"
     )
 
 
-_HEADER = "| | Trades | Win rate | Bruto/trade | Custo/trade | Líquido/trade | Profit factor |\n|---|---|---|---|---|---|---|"
+_HEADER = (
+    "| | Trades | Win rate | Bruto/trade | Custo/trade | Funding/trade | Líquido/trade "
+    "| Profit factor |\n|---|---|---|---|---|---|---|---|"
+)
 
 
 def to_markdown(r: LabReport) -> str:
@@ -207,7 +237,8 @@ def to_markdown(r: LabReport) -> str:
         (
             f"- Custos: entrada {c.entry_fee_bps} bps, saída {c.exit_fee_bps} bps, "
             f"derrapagem {c.slippage_bps} bps | saída por tempo: {c.hold_bars or 'não'} barras"
-            f" | parâmetros: {c.params or 'padrão'}"
+            f" | stop móvel: {'sim' if c.trailing_stop else 'não'}"
+            f" | funding: {'real' if c.funding else 'não'} | parâmetros: {c.params or 'padrão'}"
         ),
         "",
         "## Veredito",
