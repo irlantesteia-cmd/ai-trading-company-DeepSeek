@@ -11,11 +11,19 @@ from app.risk.limits import RiskLimits
 
 logger = logging.getLogger(__name__)
 
+RULE_HALTED = "halted"
+RULE_CONFIDENCE = "confidence"
+RULE_DAILY_LOSS = "daily_loss"
+RULE_CONSECUTIVE_LOSSES = "consecutive_losses"
+# Rejeições que viram trava global persistente (liberação só manual).
+AUTO_HALT_RULES = frozenset({RULE_DAILY_LOSS, RULE_CONSECUTIVE_LOSSES})
+
 
 class RiskEngine:
     """Avalia sinais contra limites configuráveis.
 
     Regras (avaliadas em ordem, primeira falha rejeita):
+        0. nenhuma trava de trading ativa (global ou do símbolo)
         1. confidence >= min_confidence
         2. daily_pnl > -(menor entre max_daily_loss e max_daily_loss_pct do equity)
         3. consecutive_losses < max_consecutive_losses
@@ -36,10 +44,18 @@ class RiskEngine:
     async def evaluate(self, signal: Signal, state: PortfolioState) -> RiskDecision:
         limits = self._limits
 
+        halt = state.halt_for(signal.symbol)
+        if halt is not None:
+            where = "global" if halt.scope == "GLOBAL" else halt.symbol
+            return self._reject(
+                signal, f"TRADING HALTED ({where}): {halt.reason}", RULE_HALTED
+            )
+
         if signal.confidence < limits.min_confidence:
             return self._reject(
                 signal,
                 f"confidence {signal.confidence:.3f} < {limits.min_confidence:.3f}",
+                RULE_CONFIDENCE,
             )
 
         daily_limit = self.daily_loss_limit(state.equity)
@@ -48,6 +64,7 @@ class RiskEngine:
                 signal,
                 f"daily loss limit atingido: pnl={state.daily_pnl:.2f} "
                 f"<= -{daily_limit:.2f}",
+                RULE_DAILY_LOSS,
             )
 
         if (
@@ -58,6 +75,7 @@ class RiskEngine:
                 signal,
                 f"max_consecutive_losses={limits.max_consecutive_losses} atingido "
                 f"(atual={state.consecutive_losses})",
+                RULE_CONSECUTIVE_LOSSES,
             )
 
         projected = state.total_notional + limits.max_position_notional_per_symbol
@@ -67,12 +85,14 @@ class RiskEngine:
                 f"max_total_notional={limits.max_total_notional} excedido: "
                 f"atual={state.total_notional:.2f} + nova posição até "
                 f"{limits.max_position_notional_per_symbol}",
+                "total_notional",
             )
 
         if state.open_positions_count >= limits.max_open_positions:
             return self._reject(
                 signal,
                 f"max_open_positions={limits.max_open_positions} atingido",
+                "max_open_positions",
             )
 
         current_in_direction = state.count_in_direction(signal.direction)
@@ -81,12 +101,14 @@ class RiskEngine:
                 signal,
                 f"max_same_direction={limits.max_same_direction} atingido "
                 f"para {signal.direction} (atual={current_in_direction})",
+                "same_direction",
             )
 
         if state.has_position(signal.symbol):
             return self._reject(
                 signal,
                 f"posição já aberta em {signal.symbol}",
+                "symbol_open",
             )
 
         for group_name, symbols in limits.correlated_groups.items():
@@ -98,6 +120,7 @@ class RiskEngine:
                     signal,
                     f"correlação (grupo '{group_name}'): já há posição em "
                     f"{sorted(conflicting)}",
+                    "correlation",
                 )
 
         return RiskDecision(
@@ -115,7 +138,7 @@ class RiskEngine:
         return limit
 
     @staticmethod
-    def _reject(signal: Signal, reason: str) -> RiskDecision:
+    def _reject(signal: Signal, reason: str, rule: str) -> RiskDecision:
         logger.info(
             "risk.rejected",
             extra={"signal_id": signal.signal_id, "reason": reason},
@@ -124,4 +147,5 @@ class RiskEngine:
             signal_id=signal.signal_id,
             action=RiskAction.REJECT,
             reason=reason,
+            rule=rule,
         )

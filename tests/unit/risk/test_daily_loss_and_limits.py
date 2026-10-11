@@ -108,7 +108,8 @@ class _Result:
 
 class _Session:
     def __init__(self, realized, recent) -> None:
-        self._results = [_Result(scalar=realized), _Result(rows=recent)]
+        # realizado do dia, perdas recentes, travas ativas
+        self._results = [_Result(scalar=realized), _Result(rows=recent), _Result(rows=[])]
         self.statements: list = []
 
     async def __aenter__(self):

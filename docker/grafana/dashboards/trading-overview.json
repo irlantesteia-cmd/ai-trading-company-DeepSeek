@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "editable": true,
   "time": {
     "from": "now-7d",
@@ -21,7 +21,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 8,
         "w": 24,
         "h": 1
       },
@@ -37,7 +37,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 1,
+        "y": 9,
         "w": 6,
         "h": 4
       },
@@ -72,7 +72,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 1,
+        "y": 9,
         "w": 6,
         "h": 4
       },
@@ -100,7 +100,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 1,
+        "y": 9,
         "w": 6,
         "h": 4
       },
@@ -137,7 +137,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 1,
+        "y": 9,
         "w": 6,
         "h": 4
       },
@@ -172,7 +172,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 13,
         "w": 12,
         "h": 8
       },
@@ -207,7 +207,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 5,
+        "y": 13,
         "w": 12,
         "h": 8
       },
@@ -242,7 +242,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 21,
         "w": 8,
         "h": 8
       },
@@ -270,7 +270,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 13,
+        "y": 21,
         "w": 16,
         "h": 8
       },
@@ -298,7 +298,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 29,
         "w": 24,
         "h": 9
       },
@@ -323,7 +323,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 38,
         "w": 24,
         "h": 1
       },
@@ -339,7 +339,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 39,
         "w": 12,
         "h": 8
       },
@@ -378,7 +378,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 31,
+        "y": 39,
         "w": 12,
         "h": 8
       },
@@ -406,7 +406,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 47,
         "w": 24,
         "h": 7
       },
@@ -431,7 +431,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 54,
         "w": 24,
         "h": 1
       },
@@ -447,7 +447,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 47,
+        "y": 55,
         "w": 16,
         "h": 7
       },
@@ -475,7 +475,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 47,
+        "y": 55,
         "w": 8,
         "h": 7
       },
@@ -518,7 +518,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 54,
+        "y": 62,
         "w": 24,
         "h": 1
       },
@@ -534,7 +534,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 63,
         "w": 12,
         "h": 8
       },
@@ -573,7 +573,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 55,
+        "y": 63,
         "w": 6,
         "h": 4
       },
@@ -610,7 +610,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 55,
+        "y": 63,
         "w": 6,
         "h": 4
       },
@@ -660,7 +660,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 59,
+        "y": 67,
         "w": 12,
         "h": 4
       },
@@ -688,7 +688,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 63,
+        "y": 71,
         "w": 24,
         "h": 9
       },
@@ -716,7 +716,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 72,
+        "y": 80,
         "w": 12,
         "h": 8
       },
@@ -744,7 +744,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 72,
+        "y": 80,
         "w": 12,
         "h": 8
       },
@@ -759,6 +759,104 @@
           "editorMode": "code",
           "format": "table",
           "rawSql": "SELECT checked_at AS \"Em\", market_type AS \"Mercado\", unresolved::text AS \"Não resolvidas\", missing_on_exchange::text AS \"Sumiram da exchange\", missing_in_db::text AS \"Faltavam no banco\" FROM reconciliation_runs WHERE NOT balanced AND $__timeFilter(checked_at) ORDER BY checked_at DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Trava de trading",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Status do trading",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN COUNT(*) = 0 THEN 'ATIVO' ELSE 'TRAVADO' END AS \"Status\" FROM trading_halts WHERE cleared_at IS NULL"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "ATIVO": {
+                  "color": "green",
+                  "index": 0
+                },
+                "TRAVADO": {
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "table",
+      "title": "Travas ativas e recentes",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 18,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN cleared_at IS NULL THEN 'ATIVA' ELSE 'liberada' END AS \"Situação\", COALESCE(symbol, 'GLOBAL') AS \"Escopo\", source AS \"Origem\", rule AS \"Regra\", reason AS \"Motivo\", created_at AS \"Criada em\", created_by AS \"Por\", cleared_at AS \"Liberada em\", cleared_by AS \"Liberada por\", clear_note AS \"Obs.\" FROM trading_halts ORDER BY (cleared_at IS NULL) DESC, created_at DESC LIMIT 20"
         }
       ]
     }
