@@ -50,7 +50,11 @@ def compute_metrics(
         # Expectativa por trade em % do notional: bruta (só preço), custo
         # (taxas + derrapagem) e líquida. Com bruta ~0, o líquido é -custo.
         metrics["avg_gross_return_pct"] = mean([t.gross_return_pct for t in trades])
-        metrics["avg_cost_pct"] = metrics["avg_gross_return_pct"] - metrics["avg_return_pct"]
+        metrics["avg_funding_pct"] = mean([t.funding_pct for t in trades])
+        # Custo = corretagem + derrapagem; funding fica separado.
+        metrics["avg_cost_pct"] = (
+            metrics["avg_gross_return_pct"] - metrics["avg_return_pct"] - metrics["avg_funding_pct"]
+        )
         metrics["avg_bars_held"] = mean([t.bars_held for t in trades])
         metrics["total_fees"] = float(sum((t.fees for t in trades), Decimal(0)))
         for reason in ("stop", "target", "time", "end"):

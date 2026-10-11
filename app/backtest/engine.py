@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 import logging
 from decimal import Decimal
 
@@ -37,10 +38,18 @@ class BacktestEngine:
       - Uma posição por vez; ao final, posição aberta fecha no último close.
       - Ruína: com equity abaixo de `ruin_equity_pct`% do capital inicial,
         nenhuma entrada nova é aberta (métrica `ruined`).
+      - Stop móvel (`trailing_stop`): depois de checar a saída da barra, o
+        stop acompanha a máxima (compra) / mínima (venda) mantendo a distância
+        inicial; nunca afrouxa. Atualizar só após a checagem é conservador.
+      - Funding (`funding_rates`): soma das taxas com liquidação dentro do
+        trade × notional de entrada; comprado paga taxa positiva, vendido
+        recebe. Separado das taxas de corretagem no resultado.
     """
 
     def __init__(self, config: BacktestConfig | None = None) -> None:
         self._config = config or BacktestConfig()
+        self._funding: list[tuple[int, float]] = []
+        self._funding_times: list[int] = []
         cfg = self._config
         self._entry_fee = Decimal(str(cfg.entry_fee_bps if cfg.entry_fee_bps is not None else cfg.fee_bps)) / _BPS
         self._exit_fee = Decimal(str(cfg.exit_fee_bps if cfg.exit_fee_bps is not None else cfg.fee_bps)) / _BPS
@@ -59,6 +68,7 @@ class BacktestEngine:
         candles: list[Candle],
         strategy: Strategy,
         regimes: list[tuple[str, str]] | None = None,
+        funding_rates: list[tuple[int, float]] | None = None,
     ) -> BacktestResult:
         """`regimes`: rótulo (tendência, volatilidade) por barra, gravado no
         trade a partir da barra do sinal."""
@@ -66,6 +76,8 @@ class BacktestEngine:
             raise ValueError("candles vazio")
         if regimes is not None and len(regimes) != len(candles):
             raise ValueError("regimes deve ter um rótulo por candle")
+        self._funding = sorted(funding_rates or [])
+        self._funding_times = [t for t, _ in self._funding]
 
         cfg = self._config
         equity = cfg.initial_capital
@@ -105,6 +117,8 @@ class BacktestEngine:
                     equity += net_pnl
                     equity_curve.append((bar.close_time, equity))
                     open_trade = None
+                elif cfg.trailing_stop:
+                    open_trade = self._trail(open_trade, bar)
 
             # 3) Novo sinal (apenas sem posição)
             if open_trade is None and i < len(candles) - 1:
@@ -194,7 +208,33 @@ class BacktestEngine:
             quantity=qty,
             stop_price=stop,
             target_price=target,
+            trail_distance=stop_distance if self._config.trailing_stop else None,
+            best_price=entry_price if self._config.trailing_stop else None,
         )
+
+    @staticmethod
+    def _trail(trade: BacktestTrade, bar: Candle) -> BacktestTrade:
+        """Stop móvel: aproxima o stop do melhor preço; nunca o afasta."""
+        distance, best = trade.trail_distance, trade.best_price
+        if distance is None or best is None:
+            return trade
+        if trade.direction == SignalDirection.LONG:
+            best = max(best, bar.high)
+            stop = max(trade.stop_price, best - distance)
+        else:
+            best = min(best, bar.low)
+            stop = min(trade.stop_price, best + distance)
+        return trade.model_copy(update={"best_price": best, "stop_price": stop})
+
+    def _funding_paid(self, trade: BacktestTrade, exit_time, notional: Decimal) -> Decimal:
+        """Funding com liquidação em (entrada, saída]; + = pago, - = recebido."""
+        if not self._funding:
+            return Decimal(0)
+        lo = bisect.bisect_right(self._funding_times, int(trade.entry_time.timestamp() * 1000))
+        hi = bisect.bisect_right(self._funding_times, int(exit_time.timestamp() * 1000))
+        rate = sum(r for _, r in self._funding[lo:hi])
+        sign = 1 if trade.direction == SignalDirection.LONG else -1
+        return notional * Decimal(str(rate)) * sign
 
     def _check_exit(
         self, trade: BacktestTrade, bar: Candle
@@ -226,7 +266,8 @@ class BacktestEngine:
         entry_notional = trade.entry_price * qty
         exit_notional = exit_price * qty
         fees = entry_notional * self._entry_fee + exit_notional * self._exit_fee
-        net_pnl = gross - fees
+        funding = self._funding_paid(trade, exit_time, entry_notional)
+        net_pnl = gross - fees - funding
 
         # Bruto = movimento de preço sem derrapagem nem taxas.
         raw_entry = self._remove_slippage(trade.entry_price, trade.side)
@@ -241,6 +282,8 @@ class BacktestEngine:
                 "fees": fees,
                 "return_pct": float(net_pnl / entry_notional * 100) if entry_notional > 0 else 0.0,
                 "gross_return_pct": float(raw_move / raw_entry * 100) if raw_entry > 0 else 0.0,
+                "funding": funding,
+                "funding_pct": float(funding / entry_notional * 100) if entry_notional > 0 else 0.0,
             }
         )
         return closed, net_pnl

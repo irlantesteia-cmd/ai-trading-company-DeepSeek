@@ -31,6 +31,9 @@ class BacktestConfig(DomainModel):
     # tamanho proporcional ao equity, o capital decai sem nunca cruzar zero
     # (ex.: 3.000 → 0,016 USDT); na prática nenhuma ordem desse tamanho existe.
     ruin_equity_pct: float = 1.0
+    # Stop móvel: acompanha o melhor preço desde a entrada mantendo a distância
+    # inicial do stop; nunca afrouxa. Para estratégias de tendência sem alvo.
+    trailing_stop: bool = False
 
 
 class BacktestTrade(DomainModel):
@@ -56,6 +59,12 @@ class BacktestTrade(DomainModel):
     # Regime na barra do sinal (ver app/backtest/regime.py); None = não calculado.
     regime_trend: str | None = None
     regime_vol: str | None = None
+    # Funding pago (+) ou recebido (-) durante o trade, em USDT e % do notional.
+    funding: Decimal = Decimal(0)
+    funding_pct: float = 0.0
+    # Stop móvel: distância mantida e melhor preço desde a entrada.
+    trail_distance: Decimal | None = None
+    best_price: Decimal | None = None
 
     @property
     def is_open(self) -> bool:

@@ -17,6 +17,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -64,7 +65,7 @@ class KlineCache:
         tmp.replace(path)
 
 
-async def _get(client: httpx.AsyncClient, url: str, params: dict) -> list[list]:
+async def _get(client: httpx.AsyncClient, url: str, params: dict) -> list[Any]:
     for attempt in range(_RETRIES):
         try:
             r = await client.get(url, params=params)
@@ -178,3 +179,74 @@ async def load_candles(
 
     selected = [r for r in merged if int(r[0]) >= start_ms]
     return [map_kline(r, MarketType.FUTURES, symbol, interval, now=now) for r in selected]
+
+
+# ------------------------------------------------------------------ funding
+_FUNDING_PAGE = 1000  # máximo por chamada em /fapi/v1/fundingRate
+_FUNDING_STEP_MS = 8 * 3_600_000  # liquidação a cada 8h (pode variar por símbolo)
+
+
+async def _fetch_funding_forward(
+    client: httpx.AsyncClient, url: str, symbol: str, *, start_ms: int, end_ms: int
+) -> list[list]:
+    out: list[list] = []
+    cursor = start_ms
+    while cursor <= end_ms:
+        page = await _get(
+            client,
+            url,
+            {"symbol": symbol, "startTime": cursor, "endTime": end_ms, "limit": _FUNDING_PAGE},
+        )
+        if not page:
+            break
+        out.extend([int(x["fundingTime"]), float(x["fundingRate"])] for x in page)
+        cursor = int(page[-1]["fundingTime"]) + 1
+        if len(page) < _FUNDING_PAGE:
+            break
+    return out
+
+
+async def load_funding(
+    symbol: str,
+    *,
+    days: float,
+    now: datetime | None = None,
+    client: httpx.AsyncClient | None = None,
+    cache: KlineCache | None = None,
+    base_url: str = DEFAULT_BASE_URL,
+) -> list[tuple[int, float]]:
+    """Taxas de funding liquidadas nos últimos `days` dias: (fundingTime_ms, taxa).
+
+    Mesmo cache dos candles (`<SYMBOL>_funding.json.gz`); só busca o que falta.
+    """
+    now = now or datetime.now(UTC)
+    cache = cache or KlineCache()
+    now_ms = int(now.timestamp() * 1000)
+    start_ms = int((now - timedelta(days=days)).timestamp() * 1000)
+    url = f"{base_url}/fapi/v1/fundingRate"
+
+    rows = cache.read(symbol, "funding")
+    own_client = client is None
+    http = client or httpx.AsyncClient(timeout=30)
+    try:
+        fetched: list[list] = []
+        if not rows:
+            fetched = await _fetch_funding_forward(http, url, symbol, start_ms=start_ms, end_ms=now_ms)
+        else:
+            if int(rows[0][0]) > start_ms + _FUNDING_STEP_MS:
+                fetched += await _fetch_funding_forward(
+                    http, url, symbol, start_ms=start_ms, end_ms=int(rows[0][0]) - 1
+                )
+            # Só busca se a próxima liquidação esperada já ficou no passado.
+            if int(rows[-1][0]) + _FUNDING_STEP_MS < now_ms:
+                fetched += await _fetch_funding_forward(
+                    http, url, symbol, start_ms=int(rows[-1][0]) + 1, end_ms=now_ms
+                )
+    finally:
+        if own_client:
+            await http.aclose()
+
+    merged = _merge(rows, fetched)
+    if fetched:
+        cache.write(symbol, "funding", merged)
+    return [(int(t), float(r)) for t, r in merged if int(t) >= start_ms]
