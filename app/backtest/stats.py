@@ -19,7 +19,8 @@ class TradeStats(BaseModel):
     trades: int = 0
     win_rate: float = 0.0
     avg_gross_pct: float = 0.0
-    avg_cost_pct: float = 0.0
+    avg_cost_pct: float = 0.0     # corretagem + derrapagem
+    avg_funding_pct: float = 0.0  # funding pago (+) / recebido (-)
     avg_net_pct: float = 0.0
     profit_factor: float = 0.0  # soma dos líquidos positivos / |soma dos negativos|
 
@@ -38,11 +39,13 @@ def summarize(trades: Sequence[BacktestTrade]) -> TradeStats:
         pf = float("inf") if gains > 0 else 0.0
     avg_net = sum(net) / n
     avg_gross = sum(gross) / n
+    avg_funding = sum(t.funding_pct for t in trades) / n
     return TradeStats(
         trades=n,
         win_rate=sum(1 for x in net if x > 0) / n,
         avg_gross_pct=avg_gross,
-        avg_cost_pct=avg_gross - avg_net,
+        avg_cost_pct=avg_gross - avg_net - avg_funding,
+        avg_funding_pct=avg_funding,
         avg_net_pct=avg_net,
         profit_factor=pf,
     )
