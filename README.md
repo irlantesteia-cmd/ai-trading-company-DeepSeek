@@ -91,7 +91,10 @@ docker compose up -d grafana
 Bloqueia **novas entradas** na hora, sem reiniciar o bot; posições abertas
 seguem com SL, TP e saída por tempo (para zerar, use `close_all_positions.py`).
 Perda diária ou perdas seguidas acima do limite criam uma trava global
-automática, liberada **só** pelo `resume`.
+automática, liberada **só** pelo `resume`. Falhas operacionais também travam:
+reconciliações seguidas com divergência ou com erro, erros seguidos da
+corretora ao executar sinais, chave rejeitada, stop-loss que falha e posição
+aberta sem stop-loss (limites `HALT_*` no `.env`; ver `.env.example`).
 
 ```powershell
 python scripts/trading_control.py status

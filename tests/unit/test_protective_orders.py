@@ -219,6 +219,7 @@ def _make_agent(
     is_hedge: bool = False,
 ) -> ExecutionAgent:
     context = MagicMock()
+    context.session_factory = None  # sem banco: travas (R3) só logam
     context.event_bus.publish = AsyncMock()
     context.exchange.orders.place_conditional_order = conditional_mock
     context.exchange.orders.place_order = AsyncMock()

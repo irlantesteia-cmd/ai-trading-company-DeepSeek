@@ -133,6 +133,14 @@ class Settings(BaseSettings):
     heartbeat_interval_s: float = 30.0
     health_check_interval_s: float = 60.0
     reconcile_interval_s: float = 300.0
+    # R3: falhas operacionais criam trava global (liberação só manual). 0 desliga.
+    # Reconciliações seguidas com divergência não resolvida / que nem rodam.
+    halt_reconciliation_runs: int = 2
+    halt_reconciliation_errors: int = 3
+    # Falhas seguidas da corretora ao executar sinais aprovados.
+    halt_api_errors: int = 3
+    # Verificações seguidas com posição aberta sem stop-loss (com STOP_LOSS_ENABLED).
+    halt_unprotected_runs: int = 2
     # Saída por tempo: fecha posições abertas há mais que isto (minutos).
     # 0 desliga. Verificação a cada `time_exit_check_interval_s`.
     position_max_holding_minutes: float = 0.0

@@ -79,6 +79,11 @@ for decisions that arrive first. Preserve registration order in `run_bot.py`.
   (`trading_halts` table). `daily_loss` and `consecutive_losses` breaches create an automatic global
   halt that is released **only** manually (`trading_control.py resume`). Daily P&L = realized since
   00:00 UTC + unrealized.
+- Every automatic halt goes through `app/runtime/halt_guard.py` (`HaltGuard.trip`, deduplicated per
+  scope/symbol/rule). Operational rules (R3): `reconciliation`, `reconciliation_error`,
+  `unprotected_position` (from `ReconcileMonitor`), `api_errors`/`api_auth` (`TradingManager`),
+  `protection`/`protection_failure` (`ExecutionAgent`). Thresholds are `HALT_*` settings; halts never
+  touch the exchange, they only block new entries.
 - Execution anchors SL/TP to the actual fill price; if the stop-loss cannot be placed, the position
   is flattened (`CLOSE_ON_STOP_LOSS_FAILURE`). Stale candles (`CANDLE_MAX_EMIT_LAG_S`) are skipped.
 - Binance specifics: conditional orders (STOP/TAKE_PROFIT_MARKET) go through `/fapi/v1/algoOrder`
