@@ -20,6 +20,11 @@ class RiskLimits:
     max_total_notional: Decimal = Decimal(50000)
     max_leverage: int = 10
     max_daily_loss: Decimal = Decimal(1000)
+    # Perda diária máxima em % do equity (0 desliga). Vale o mais restritivo
+    # entre este e `max_daily_loss`.
+    max_daily_loss_pct: Decimal = Decimal(0)
+    # Round trips seguidos com prejuízo antes de bloquear entradas (0 desliga).
+    max_consecutive_losses: int = 0
     max_open_positions: int = 5
     max_same_direction: int = 2
     min_confidence: float = 0.5

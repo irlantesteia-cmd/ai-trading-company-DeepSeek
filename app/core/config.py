@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     risk_max_total_notional: float = 50_000.0
     risk_max_leverage: int = 10
     risk_max_daily_loss: float = 1_000.0
+    # % do equity; o limite efetivo é o menor entre este e o absoluto.
+    risk_max_daily_loss_pct: float = 3.0
+    risk_max_consecutive_losses: int = 4
     risk_max_open_positions: int = 5
     # Máximo de posições abertas na **mesma direção** (LONG ou SHORT).
     # Evita concentração direcional quando vários símbolos disparam sinal

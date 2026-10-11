@@ -10,8 +10,12 @@ class PortfolioState(DomainModel):
     """Snapshot do portfólio usado pelo motor de risco e pelo dimensionador."""
 
     equity: Decimal
+    # P&L do dia (00:00 UTC): realizado (round trips fechados) + não realizado
+    # (posições abertas). É o que o limite de perda diária avalia.
     daily_pnl: Decimal
     positions: list[FuturesPosition] = Field(default_factory=list)
+    # Round trips fechados com prejuízo em sequência (do mais recente para trás).
+    consecutive_losses: int = 0
 
     @property
     def open_positions(self) -> list[FuturesPosition]:
