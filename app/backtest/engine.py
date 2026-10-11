@@ -35,6 +35,8 @@ class BacktestEngine:
       - Tamanho: risco % do equity / distância do stop, limitado por
         `max_position_notional` (como o PositionSizer).
       - Uma posição por vez; ao final, posição aberta fecha no último close.
+      - Ruína: com equity abaixo de `ruin_equity_pct`% do capital inicial,
+        nenhuma entrada nova é aberta (métrica `ruined`).
     """
 
     def __init__(self, config: BacktestConfig | None = None) -> None:
@@ -56,9 +58,14 @@ class BacktestEngine:
         market_type: MarketType,
         candles: list[Candle],
         strategy: Strategy,
+        regimes: list[tuple[str, str]] | None = None,
     ) -> BacktestResult:
+        """`regimes`: rótulo (tendência, volatilidade) por barra, gravado no
+        trade a partir da barra do sinal."""
         if not candles:
             raise ValueError("candles vazio")
+        if regimes is not None and len(regimes) != len(candles):
+            raise ValueError("regimes deve ter um rótulo por candle")
 
         cfg = self._config
         equity = cfg.initial_capital
@@ -66,11 +73,22 @@ class BacktestEngine:
         trades: list[BacktestTrade] = []
         open_trade: BacktestTrade | None = None
         pending: Signal | None = None
+        pending_bar = 0
+        ruin_level = cfg.initial_capital * Decimal(str(cfg.ruin_equity_pct)) / 100
+        ruined = False
 
         for i, bar in enumerate(candles):
-            # 1) Entra o sinal pendente na abertura desta barra
+            # 1) Entra o sinal pendente na abertura desta barra (sem capital, não entra)
+            if pending is not None and open_trade is None and equity <= ruin_level:
+                ruined = True
+                pending = None
             if pending is not None and open_trade is None:
                 open_trade = self._enter(pending, bar, equity)
+                if regimes is not None:
+                    trend, vol = regimes[pending_bar]
+                    open_trade = open_trade.model_copy(
+                        update={"regime_trend": trend, "regime_vol": vol}
+                    )
                 pending = None
 
             # 2) Saída: stop/alvo dentro da barra, ou por tempo no close
@@ -104,6 +122,7 @@ class BacktestEngine:
                     and sig.suggested_stop is not None
                 ):
                     pending = sig
+                    pending_bar = i
 
         # Fecha posição aberta ao final
         if open_trade is not None:
@@ -119,6 +138,7 @@ class BacktestEngine:
             trades=trades,
             equity_curve=equity_curve,
         )
+        metrics["ruined"] = 1.0 if ruined or equity <= ruin_level else 0.0
         total_return_pct = float(
             (equity - cfg.initial_capital) / cfg.initial_capital * 100
         )

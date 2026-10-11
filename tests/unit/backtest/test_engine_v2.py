@@ -158,3 +158,32 @@ def test_known_trend_is_detected_as_edge():
     assert m["num_trades"] > 300
     assert m["avg_gross_return_pct"] > 0.2
     assert m["avg_return_pct"] > 0
+
+
+def test_no_new_entries_after_ruin():
+    """Capital zerado: o motor para de abrir posições (não dimensiona com equity <= 0)."""
+    candles = make_candles(_walk(3000, seed=4))
+    result = _run(
+        # Teto de notional ativo (como na execução real): perda fixa por trade,
+        # independente do equity, então o capital chega a zero.
+        _cfg(initial_capital=Decimal(50), risk_per_trade_pct=0.5, fee_bps=50.0,
+             slippage_bps=20.0, max_position_notional=Decimal(1000)),
+        candles,
+        _PctStrategy(stop_pct=0.5, target_pct=0.5, rng=random.Random(2)),
+    )
+    assert result.metrics["ruined"] == 1.0
+    assert all(t.quantity > 0 for t in result.trades)
+    assert result.final_equity <= Decimal("0.5")  # abaixo de 1% de 50
+
+
+def test_ruin_also_stops_the_asymptotic_decay():
+    """Sem teto ativo o tamanho cai com o equity e o capital nunca cruza zero:
+    a ruína a 1% do inicial é o que interrompe as entradas."""
+    candles = make_candles(_walk(6000, seed=4))
+    result = _run(
+        _cfg(initial_capital=Decimal(1000), risk_per_trade_pct=0.2, fee_bps=50.0, slippage_bps=20.0),
+        candles,
+        _PctStrategy(stop_pct=0.5, target_pct=0.5, rng=random.Random(2)),
+    )
+    assert result.metrics["ruined"] == 1.0
+    assert result.final_equity > 0
