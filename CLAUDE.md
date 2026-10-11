@@ -103,7 +103,13 @@ trailing stop, real funding (long pays / short receives), notional cap, and ruin
 `gate.py` is the promotion gate (≥300 trades, CI95 lower bound > 0, ≥4/5 positive folds, PF > 1.1,
 max DD ≤ 20%); `lab.py` + `scripts/strategy_lab.py` run strategy × symbols × intervals and write
 reports to `artifacts/lab/`. A strategy reaches the live bot only after passing the gate;
-`trend_breakout` is lab-only for now. Results so far: `momentum` rejected (≈0 gross edge).
+`trend_breakout` is lab-only for now. Results so far: `momentum` rejected (≈0 gross edge),
+`trend_breakout` rejected (gross edge concentrated in one year).
+
+Portfolio strategies (`xs_momentum`, cross-sectional long/short on daily bars) run through
+`portfolio.py` + `portfolio_lab.py` instead of `BacktestEngine`: the statistical unit is the
+rebalance period (positions of one period are correlated), and the gate's sample criterion counts
+positions plus a minimum number of periods.
 
 ```powershell
 .\.venv\Scripts\python scripts/strategy_lab.py --strategy momentum --intervals 5m,15m,1h --days 180 --hold-bars 6

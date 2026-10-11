@@ -11,6 +11,12 @@ Uso (PowerShell):
     python scripts/strategy_lab.py --strategy momentum --param stop_atr_mult=2 --param target_atr_mult=4
     python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 \
         --trailing-stop --funding --symbols BTCUSDT,ETHUSDT,SOLUSDT
+    python scripts/strategy_lab.py --strategy xs_momentum --days 1750 --funding \
+        --symbols BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT,ADAUSDT --param top_k=1
+
+`xs_momentum` é uma estratégia de carteira (momentum entre ativos): usa
+sempre candles 1d e ignora --intervals, --hold-bars, --trailing-stop e
+--notional-cap. Parâmetros: lookback_days, top_k, rebalance_days.
 """
 
 from __future__ import annotations
@@ -21,7 +27,11 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pydantic import BaseModel
+
+from app.backtest import portfolio_lab
 from app.backtest.lab import STRATEGIES, LabConfig, run_lab, to_markdown
+from app.backtest.portfolio import XSMomentumParams
 
 # (entrada, saída) em bps. Maker: ordem limite na entrada; a saída (SL/TP/tempo)
 # é sempre a mercado, então taker.
@@ -49,9 +59,13 @@ def _param(value: str) -> tuple[str, float]:
         raise argparse.ArgumentTypeError(f"valor numérico inválido em {value!r}") from exc
 
 
-def parse_args(argv: list[str] | None = None) -> LabConfig:
+def parse_args(argv: list[str] | None = None) -> LabConfig | portfolio_lab.PortfolioLabConfig:
     p = argparse.ArgumentParser(description="Laboratório de estratégias")
-    p.add_argument("--strategy", choices=sorted(STRATEGIES), default="momentum")
+    p.add_argument(
+        "--strategy",
+        choices=sorted(set(STRATEGIES) | portfolio_lab.PORTFOLIO_STRATEGIES),
+        default="momentum",
+    )
     p.add_argument("--symbols", default="BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT")
     p.add_argument("--intervals", default="5m")
     p.add_argument("--days", type=float, default=180)
@@ -69,6 +83,23 @@ def parse_args(argv: list[str] | None = None) -> LabConfig:
     p.add_argument("--folds", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)
     a = p.parse_args(argv)
+    if a.strategy in portfolio_lab.PORTFOLIO_STRATEGIES:
+        try:
+            params = XSMomentumParams(**{k: int(v) for k, v in a.param})
+        except ValueError as exc:
+            p.error(f"parâmetros inválidos para {a.strategy}: {exc}")
+        return portfolio_lab.PortfolioLabConfig(
+            strategy=a.strategy,
+            params=params,
+            symbols=[s.strip().upper() for s in a.symbols.split(",") if s.strip()],
+            days=a.days,
+            # Rebalanceamento a mercado nos dois sentidos: vale a maior corretagem.
+            fee_bps=max(a.fee),
+            slippage_bps=a.slippage_bps,
+            funding=a.funding,
+            folds=a.folds,
+            seed=a.seed,
+        )
     return LabConfig(
         strategy=a.strategy,
         params=dict(a.param),
@@ -90,8 +121,13 @@ def parse_args(argv: list[str] | None = None) -> LabConfig:
 def main(argv: list[str] | None = None) -> Path:
     logging.basicConfig(level=logging.WARNING)
     config = parse_args(argv)
-    report = asyncio.run(run_lab(config))
-    md = to_markdown(report)
+    report: BaseModel
+    if isinstance(config, portfolio_lab.PortfolioLabConfig):
+        portfolio_report = asyncio.run(portfolio_lab.run_portfolio_lab(config))
+        report, md = portfolio_report, portfolio_lab.to_markdown(portfolio_report)
+    else:
+        lab_report = asyncio.run(run_lab(config))
+        report, md = lab_report, to_markdown(lab_report)
     print(md)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     stem = REPORT_DIR / f"{datetime.now(UTC):%Y%m%dT%H%M%SZ}_{config.strategy}"
