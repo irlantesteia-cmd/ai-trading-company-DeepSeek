@@ -10,6 +10,7 @@ from app.domain.models.risk import RiskDecision
 from app.domain.models.signal import Signal
 from app.portfolio.sizing import PositionSizer
 from app.portfolio.state import PortfolioState
+from app.portfolio.state_loader import load_portfolio_state
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,6 @@ class PortfolioAgent(BaseAgent):
         return self._sizer.size(signal, decision, state)
 
     async def _load_state(self) -> PortfolioState:
-        positions = await self.context.exchange.account.get_futures_positions()
-        balance = await self.context.exchange.account.get_futures_balance("USDT")
-        return PortfolioState(
-            equity=balance.total,
-            daily_pnl=Decimal(0),
-            positions=positions,
+        return await load_portfolio_state(
+            self.context.exchange, self.context.session_factory
         )

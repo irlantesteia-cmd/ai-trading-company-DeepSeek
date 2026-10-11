@@ -36,6 +36,9 @@ def _state(
 ) -> MagicMock:
     st = MagicMock()
     st.daily_pnl = daily_pnl if daily_pnl is not None else Decimal(0)
+    st.equity = Decimal(10000)
+    st.consecutive_losses = 0
+    st.total_notional = Decimal(0)
     st.open_positions_count = open_positions_count
     st.has_position = MagicMock(return_value=has_position)
     st.symbols = MagicMock(return_value=symbols or set())

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 from app.core.enums import RiskAction
 from app.domain.models.risk import RiskDecision
@@ -16,11 +17,13 @@ class RiskEngine:
 
     Regras (avaliadas em ordem, primeira falha rejeita):
         1. confidence >= min_confidence
-        2. daily_pnl > -max_daily_loss
-        3. open_positions_count < max_open_positions
-        4. nenhuma direção com `max_same_direction` posições abertas
-        5. não há posição já aberta no mesmo símbolo
-        6. nenhum símbolo correlacionado já tem posição
+        2. daily_pnl > -(menor entre max_daily_loss e max_daily_loss_pct do equity)
+        3. consecutive_losses < max_consecutive_losses
+        4. exposição total + uma posição cheia <= max_total_notional
+        5. open_positions_count < max_open_positions
+        6. nenhuma direção com `max_same_direction` posições abertas
+        7. não há posição já aberta no mesmo símbolo
+        8. nenhum símbolo correlacionado já tem posição
     """
 
     def __init__(self, limits: RiskLimits) -> None:
@@ -39,11 +42,31 @@ class RiskEngine:
                 f"confidence {signal.confidence:.3f} < {limits.min_confidence:.3f}",
             )
 
-        if state.daily_pnl <= -limits.max_daily_loss:
+        daily_limit = self.daily_loss_limit(state.equity)
+        if state.daily_pnl <= -daily_limit:
             return self._reject(
                 signal,
-                f"daily loss limit atingido: pnl={state.daily_pnl} "
-                f"<= -{limits.max_daily_loss}",
+                f"daily loss limit atingido: pnl={state.daily_pnl:.2f} "
+                f"<= -{daily_limit:.2f}",
+            )
+
+        if (
+            limits.max_consecutive_losses > 0
+            and state.consecutive_losses >= limits.max_consecutive_losses
+        ):
+            return self._reject(
+                signal,
+                f"max_consecutive_losses={limits.max_consecutive_losses} atingido "
+                f"(atual={state.consecutive_losses})",
+            )
+
+        projected = state.total_notional + limits.max_position_notional_per_symbol
+        if projected > limits.max_total_notional:
+            return self._reject(
+                signal,
+                f"max_total_notional={limits.max_total_notional} excedido: "
+                f"atual={state.total_notional:.2f} + nova posição até "
+                f"{limits.max_position_notional_per_symbol}",
             )
 
         if state.open_positions_count >= limits.max_open_positions:
@@ -83,6 +106,13 @@ class RiskEngine:
             reason="aprovado",
             max_leverage=limits.max_leverage,
         )
+
+    def daily_loss_limit(self, equity: Decimal) -> Decimal:
+        """Perda diária máxima efetiva: o menor entre o absoluto e o % do equity."""
+        limit = self._limits.max_daily_loss
+        if self._limits.max_daily_loss_pct > 0 and equity > 0:
+            limit = min(limit, equity * self._limits.max_daily_loss_pct / 100)
+        return limit
 
     @staticmethod
     def _reject(signal: Signal, reason: str) -> RiskDecision:
