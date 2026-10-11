@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
 
 from app.agents.base import BaseAgent, EventHandler
 from app.core.enums import AgentRole, RiskAction
@@ -10,6 +9,7 @@ from app.domain.models.order import Order
 from app.domain.models.signal import Signal
 from app.events.event import Event, SignalApproved, SignalGenerated, SignalRejected
 from app.portfolio.state import PortfolioState
+from app.portfolio.state_loader import load_portfolio_state
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +116,6 @@ class TradingManager(BaseAgent):
         return order
 
     async def _load_state(self) -> PortfolioState:
-        positions = await self.context.exchange.account.get_futures_positions()
-        balance = await self.context.exchange.account.get_futures_balance("USDT")
-        return PortfolioState(
-            equity=balance.total,
-            daily_pnl=Decimal(0),
-            positions=positions,
+        return await load_portfolio_state(
+            self.context.exchange, self.context.session_factory
         )
