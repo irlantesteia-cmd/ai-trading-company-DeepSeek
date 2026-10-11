@@ -109,6 +109,16 @@ class CloseReason(StrEnum):
         return cls.UNKNOWN
 
 
+class HaltScope(StrEnum):
+    GLOBAL = "GLOBAL"
+    SYMBOL = "SYMBOL"
+
+
+class HaltSource(StrEnum):
+    MANUAL = "MANUAL"
+    AUTO = "AUTO"
+
+
 class TradeRole(StrEnum):
     ENTRY = "ENTRY"
     EXIT = "EXIT"
