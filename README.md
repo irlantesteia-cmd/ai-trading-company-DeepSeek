@@ -86,6 +86,20 @@ docker compose up -d grafana
 # http://127.0.0.1:3000 — dashboard "Trading — visão geral" (pasta Trading)
 ```
 
+### Trava de trading (intervenção humana)
+
+Bloqueia **novas entradas** na hora, sem reiniciar o bot; posições abertas
+seguem com SL, TP e saída por tempo (para zerar, use `close_all_positions.py`).
+Perda diária ou perdas seguidas acima do limite criam uma trava global
+automática, liberada **só** pelo `resume`.
+
+```powershell
+python scripts/trading_control.py status
+python scripts/trading_control.py pause --reason "manutenção"
+python scripts/trading_control.py pause --symbol XRPUSDT --reason "spread alto"
+python scripts/trading_control.py resume --note "revisado"
+```
+
 ### Scripts auxiliares
 
 - `scripts/diagnose_binance_auth.py` — valida formato das credenciais sem vazar segredos

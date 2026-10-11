@@ -10,6 +10,8 @@ class RiskDecision(DomainModel):
     signal_id: str
     action: RiskAction
     reason: str
+    # Regra que rejeitou (ex.: "halted", "daily_loss"); None quando aprovado.
+    rule: str | None = None
     approved_quantity: Decimal | None = None
     max_leverage: int | None = None
     stop_loss_price: Decimal | None = None

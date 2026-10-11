@@ -7,7 +7,8 @@ com `daily_pnl=0` fixo, então o limite de perda diária nunca disparava.
 - `daily_pnl`: P&L líquido realizado desde 00:00 UTC (`round_trips` fechados)
   + P&L não realizado das posições abertas;
 - `consecutive_losses`: round trips fechados com `net_pnl < 0` em sequência,
-  do mais recente para trás.
+  do mais recente para trás;
+- `active_halts`: travas de trading ativas (`trading_halts`).
 
 Sem `session_factory` (testes, scripts), a parte do banco vale zero. Falha
 ao ler o banco **propaga**: sem saber a perda do dia, o sinal não deve ser
@@ -24,8 +25,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.enums import RoundTripStatus
 from app.database.models.round_trip import RoundTripORM
+from app.database.repositories.trading_halt import TradingHaltRepository
 from app.exchanges.base.exchange import Exchange
-from app.portfolio.state import PortfolioState
+from app.portfolio.state import HaltInfo, PortfolioState
 
 # Janela para contar perdas seguidas: mais que qualquer limite razoável.
 _STREAK_LOOKBACK = 50
@@ -47,17 +49,29 @@ async def load_portfolio_state(
 
     realized_today = Decimal(0)
     consecutive_losses = 0
+    halts: list[HaltInfo] = []
     if session_factory is not None:
         realized_today, consecutive_losses = await _realized_stats(
             session_factory, day_start_utc(now or datetime.now(UTC))
         )
+        halts = await _active_halts(session_factory)
 
     return PortfolioState(
         equity=balance.total,
         daily_pnl=realized_today + unrealized,
         positions=positions,
         consecutive_losses=consecutive_losses,
+        active_halts=halts,
     )
+
+
+async def _active_halts(session_factory: async_sessionmaker) -> list[HaltInfo]:
+    async with session_factory() as session:
+        rows = await TradingHaltRepository(session).list_active()
+    return [
+        HaltInfo(scope=r.scope, symbol=r.symbol, rule=r.rule, reason=r.reason)
+        for r in rows
+    ]
 
 
 async def _realized_stats(

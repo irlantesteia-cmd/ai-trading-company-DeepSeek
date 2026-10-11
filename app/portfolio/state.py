@@ -6,6 +6,15 @@ from app.domain.models.base import DomainModel
 from app.domain.models.position import FuturesPosition
 
 
+class HaltInfo(DomainModel):
+    """Trava de trading ativa (tabela `trading_halts`)."""
+
+    scope: str  # GLOBAL / SYMBOL
+    symbol: str | None = None
+    rule: str
+    reason: str
+
+
 class PortfolioState(DomainModel):
     """Snapshot do portfólio usado pelo motor de risco e pelo dimensionador."""
 
@@ -16,6 +25,17 @@ class PortfolioState(DomainModel):
     positions: list[FuturesPosition] = Field(default_factory=list)
     # Round trips fechados com prejuízo em sequência (do mais recente para trás).
     consecutive_losses: int = 0
+    active_halts: list[HaltInfo] = Field(default_factory=list)
+
+    def halt_for(self, symbol: str) -> HaltInfo | None:
+        """Trava que bloqueia `symbol`: global primeiro, depois a do símbolo."""
+        for halt in self.active_halts:
+            if halt.scope == "GLOBAL":
+                return halt
+        for halt in self.active_halts:
+            if halt.scope == "SYMBOL" and halt.symbol == symbol:
+                return halt
+        return None
 
     @property
     def open_positions(self) -> list[FuturesPosition]:
