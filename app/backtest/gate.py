@@ -40,14 +40,19 @@ def evaluate_gate(
     folds: Sequence[FoldStats],
     max_drawdown_pct: float,
     criteria: GateCriteria | None = None,
+    sample_size: int | None = None,
+    extra_checks: Sequence[GateCheck] = (),
 ) -> GateVerdict:
+    """`sample_size` substitui `overall.trades` no critério de amostra (ex.:
+    na carteira, `overall` é por período e a amostra conta as posições)."""
     c = criteria or GateCriteria()
+    samples = overall.trades if sample_size is None else sample_size
     positive = sum(1 for f in folds if f.stats.trades > 0 and f.stats.avg_net_pct > 0)
     checks = [
         GateCheck(
             name="trades",
-            passed=overall.trades >= c.min_trades,
-            value=str(overall.trades),
+            passed=samples >= c.min_trades,
+            value=str(samples),
             required=f">= {c.min_trades}",
         ),
         GateCheck(
@@ -74,5 +79,6 @@ def evaluate_gate(
             value=f"{max_drawdown_pct:.1f}%",
             required=f"<= {c.max_drawdown_pct}%",
         ),
+        *extra_checks,
     ]
     return GateVerdict(approved=all(ch.passed for ch in checks), checks=checks)
