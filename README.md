@@ -100,6 +100,19 @@ python scripts/trading_control.py pause --symbol XRPUSDT --reason "spread alto"
 python scripts/trading_control.py resume --note "revisado"
 ```
 
+### Laboratório de estratégias
+
+Backtest com as regras do bot ao vivo e custos reais, walk-forward, intervalo
+de confiança (bootstrap), resultado por regime de mercado e veredito do gate
+de promoção (≥ 300 trades, limite inferior do IC 95% > 0, ≥ 4/5 blocos
+positivos, profit factor > 1,1, drawdown ≤ 20%). Dados da API pública da
+Binance com cache em `data/klines/`; relatório em `artifacts/lab/`.
+
+```powershell
+python scripts/strategy_lab.py --strategy momentum --intervals 5m,15m,1h --days 180 --hold-bars 6
+python scripts/strategy_lab.py --strategy momentum --fee maker --param stop_atr_mult=2
+```
+
 ### Scripts auxiliares
 
 - `scripts/diagnose_binance_auth.py` — valida formato das credenciais sem vazar segredos

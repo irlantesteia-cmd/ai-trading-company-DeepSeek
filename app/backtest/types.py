@@ -27,6 +27,10 @@ class BacktestConfig(DomainModel):
     anchor_to_fill: bool = True
     # Teto de notional por posição (como RISK_MAX_POSITION_NOTIONAL). None = sem teto.
     max_position_notional: Decimal | None = None
+    # Ruína: abaixo deste % do capital inicial, nenhuma entrada nova. Com o
+    # tamanho proporcional ao equity, o capital decai sem nunca cruzar zero
+    # (ex.: 3.000 → 0,016 USDT); na prática nenhuma ordem desse tamanho existe.
+    ruin_equity_pct: float = 1.0
 
 
 class BacktestTrade(DomainModel):
@@ -49,6 +53,9 @@ class BacktestTrade(DomainModel):
     # Bruto: só o movimento de preço entre os sinais (sem taxas nem derrapagem).
     gross_return_pct: float = 0.0
     bars_held: int = 0
+    # Regime na barra do sinal (ver app/backtest/regime.py); None = não calculado.
+    regime_trend: str | None = None
+    regime_vol: str | None = None
 
     @property
     def is_open(self) -> bool:
