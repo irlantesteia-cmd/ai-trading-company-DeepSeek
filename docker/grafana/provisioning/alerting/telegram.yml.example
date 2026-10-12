@@ -1,0 +1,35 @@
+# Alertas por Telegram — modelo. Para ativar:
+#   1. Copie este arquivo para `telegram.yml` nesta mesma pasta (ignorado pelo
+#      git e fora da imagem do bot: guarda o token).
+#   2. Troque os dois valores abaixo, mantendo as aspas.
+#   3. docker compose restart grafana
+# Sem `telegram.yml`, as regras (rules.yml) continuam ativas no Grafana, mas
+# ninguém é avisado.
+#
+# O token não vai por variável de ambiente porque o Grafana converte um chat id
+# numérico em número, e o Telegram exige texto.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Telegram
+    receivers:
+      - uid: telegram-trading
+        type: telegram
+        disableResolveMessage: false
+        settings:
+          bottoken: "COLE_O_TOKEN_DO_BOTFATHER"
+          chatid: "COLE_O_CHAT_ID"
+          message: |
+            {{ range .Alerts }}{{ if eq .Status "firing" }}🚨{{ else }}✅ RESOLVIDO:{{ end }} {{ .Annotations.summary }}
+            {{ .Annotations.description }}
+            {{ end }}
+
+policies:
+  - orgId: 1
+    receiver: Telegram
+    group_by: ["alertname", "regra", "escopo"]
+    group_wait: 30s
+    group_interval: 5m
+    # Enquanto o problema continuar, repete o aviso a cada 4 h.
+    repeat_interval: 4h

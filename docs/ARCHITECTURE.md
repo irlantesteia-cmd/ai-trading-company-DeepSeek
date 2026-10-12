@@ -159,6 +159,20 @@ dashboard:
 - **Dados de mercado**: último candle por ativo (se parou de atualizar, o stream caiu).
 - **Sinais e reconciliação**: decisões por hora, motivos de rejeição, minutos desde a última reconciliação e divergências.
 
+**Alertas** (`docker/grafana/provisioning/alerting/`), avaliados a cada
+minuto e enviados ao Telegram quando `telegram.yml` está configurado (veja o
+README):
+
+| Alerta | Dispara quando |
+|---|---|
+| Trava de trading ativa | Qualquer trava ativa; uma mensagem por regra e escopo. `protection_failure` e `unprotected_position` saem como **URGENTE**. |
+| Bot sem reconciliar | Nenhuma reconciliação há mais de 15 min: o bot caiu, travou ou perdeu acesso à Binance ou ao banco. |
+| Perda do dia perto do limite | Prejuízo realizado desde 00:00 UTC abaixo de -60 USDT (a trava sai em cerca de -92). |
+
+Cada alerta avisa de novo a cada 4 h enquanto continuar, e manda "RESOLVIDO"
+quando acaba. Desligar o bot de propósito dispara "Bot sem reconciliar":
+silencie no Grafana (Alerting → Silences).
+
 Logs: JSON estruturado no stdout do container (`docker compose logs app`), em
 5 arquivos de 20 MB.
 
