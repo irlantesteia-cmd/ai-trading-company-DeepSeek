@@ -94,7 +94,8 @@ for decisions that arrive first. Preserve registration order in `run_bot.py`.
   orphan SL/TP on symbols without a position; `TimeExitMonitor` closes positions older than
   `POSITION_MAX_HOLDING_MINUTES` (client order id prefix `tx-`).
 
-All behaviour toggles live in `app/core/config.py` (`Settings`, pydantic-settings, loaded from `.env`;
+The operator-facing runbook (Portuguese) is `docs/ARCHITECTURE.md`; keep its halt table in sync when
+adding or changing a halt rule. All behaviour toggles live in `app/core/config.py` (`Settings`, pydantic-settings, loaded from `.env`;
 see `.env.example`).
 
 ### Strategy lab (`app/backtest/`)
