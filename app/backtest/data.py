@@ -15,9 +15,12 @@ import asyncio
 import gzip
 import json
 import logging
+import os
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -56,13 +59,32 @@ class KlineCache:
         with gzip.open(path, "rt", encoding="utf-8") as f:
             return json.load(f)
 
-    def write(self, symbol: str, interval: str, rows: list[list]) -> None:
+    # Tentativas de troca quando outro processo está com o arquivo aberto.
+    REPLACE_ATTEMPTS = 5
+
+    def write(self, symbol: str, interval: str, rows: list[list]) -> bool:
+        """Grava de forma atômica (temporário + troca). Vários laboratórios em
+        paralelo podem gravar o mesmo arquivo: cada um usa um temporário
+        próprio, e no Windows a troca falha enquanto outro processo lê ou troca
+        o arquivo, então tenta de novo e, se não der, desiste com um aviso — os
+        dados já estão em memória; só o cache deixa de ser atualizado.
+        Retorna se gravou."""
         path = self.path(symbol, interval)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        with gzip.open(tmp, "wt", encoding="utf-8") as f:
-            json.dump(rows, f)
-        tmp.replace(path)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid4().hex[:8]}.tmp")
+        try:
+            with gzip.open(tmp, "wt", encoding="utf-8") as f:
+                json.dump(rows, f)
+            for attempt in range(self.REPLACE_ATTEMPTS):
+                try:
+                    tmp.replace(path)
+                    return True
+                except PermissionError:
+                    time.sleep(0.05 * (attempt + 1))
+            logger.warning("kline_cache.write_skipped", extra={"path": str(path)})
+            return False
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 async def _get(client: httpx.AsyncClient, url: str, params: dict) -> list[Any]:
