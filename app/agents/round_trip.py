@@ -11,11 +11,21 @@ começando em `sl-`/`tp-`), cancela as demais ordens condicionais do símbolo
 — evita órfãs quando um lado da proteção executa.
 
 Ordem de registro em `run_bot.py`: **antes** do `TradeRecorderAgent`.
+
+Concorrência: os mesmos fills podem chegar ao mesmo tempo por dois caminhos
+(User Data Stream e o REST de quem enviou a ordem, ex.: a saída por tempo).
+Como o `TradeRecorderAgent` só grava em `trades` depois deste agente, a
+checagem no banco sozinha deixava somar um fill duas vezes (visto ao vivo em
+2026-10-12: uma ordem de fechamento em 14 fills fechou o ciclo antes da hora e
+abriu um ciclo fantasma com o resto). Por isso o processamento é serializado e
+os fills já aplicados ficam em memória.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections import OrderedDict
 from decimal import Decimal
 from uuid import uuid4
 
@@ -38,11 +48,24 @@ from app.events.event import Event, OrderFilled, RoundTripAssigned
 logger = logging.getLogger(__name__)
 
 _QUANTITY_TOLERANCE = Decimal("0.00000001")
+# Fills já aplicados lembrados em memória (os mais antigos saem primeiro).
+_APPLIED_MEMORY = 10_000
 
 
 class RoundTripAgent(BaseAgent):
     role = AgentRole.AUDITOR
     name = "round_trip"
+
+    def __init__(self, context) -> None:
+        super().__init__(context)
+        self._lock = asyncio.Lock()
+        self._applied: OrderedDict[str, None] = OrderedDict()
+
+    def _remember(self, trade_ids: list[str]) -> None:
+        for trade_id in trade_ids:
+            self._applied[trade_id] = None
+        while len(self._applied) > _APPLIED_MEMORY:
+            self._applied.popitem(last=False)
 
     def subscriptions(self) -> dict[type[Event], EventHandler]:
         return {OrderFilled: self._on_order_filled}
@@ -62,15 +85,16 @@ class RoundTripAgent(BaseAgent):
             self._trade_id(order, fill, i) for i, fill in enumerate(order.fills)
         ]
 
-        async with self.context.session_factory() as session:
+        async with self._lock, self.context.session_factory() as session:
             existing = await session.execute(
                 select(TradeORM.trade_id).where(TradeORM.trade_id.in_(trade_ids))
             )
-            existing_ids = {row for (row,) in existing}
+            seen = {row for (row,) in existing} | self._applied.keys()
+            new_ids = [tid for tid in trade_ids if tid not in seen]
             new_fills = [
                 fill
                 for i, fill in enumerate(order.fills)
-                if trade_ids[i] not in existing_ids
+                if trade_ids[i] not in seen
             ]
             if not new_fills:
                 logger.debug(
@@ -95,6 +119,7 @@ class RoundTripAgent(BaseAgent):
                     self._close_trip(trip, order)
 
             await session.commit()
+            self._remember(new_ids)
             round_trip_id = trip.round_trip_id
 
         await self.context.event_bus.publish(
