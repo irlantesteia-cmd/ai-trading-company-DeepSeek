@@ -97,7 +97,19 @@ def test_sizer_sets_reference_price_to_signal_entry():
 
 
 # ------------------------------------------------- falha no stop-loss
-async def test_stop_loss_failure_flattens_position_and_skips_take_profit():
+def _trips(monkeypatch) -> list[dict]:
+    calls: list[dict] = []
+
+    async def trip(_self, **kw):
+        calls.append(kw)
+        return True
+
+    monkeypatch.setattr("app.runtime.halt_guard.HaltGuard.trip", trip)
+    return calls
+
+
+async def test_stop_loss_failure_flattens_position_and_skips_take_profit(monkeypatch):
+    trips = _trips(monkeypatch)
     agent, captured = _captured_agent(fail_types=frozenset({OrderType.STOP_MARKET}))
     close_order = _entry_order(side=OrderSide.SELL).model_copy(update={"exchange_order_id": "999"})
     agent.context.exchange.positions.close_position = AsyncMock(return_value=close_order)
@@ -110,9 +122,13 @@ async def test_stop_loss_failure_flattens_position_and_skips_take_profit():
     assert alert.component == "protection" and "fechada" in alert.detail
     (fill,) = _published(agent, OrderFilled)
     assert fill.exchange_order_id == "999"
+    # R3: posição zerada → trava só o símbolo
+    assert trips == [{"rule": "protection", "reason": "stop-loss falhou; posição fechada a mercado",
+                      "symbol": "SOLUSDT"}]
 
 
-async def test_flatten_failure_raises_alert_and_does_not_raise():
+async def test_flatten_failure_raises_alert_and_does_not_raise(monkeypatch):
+    trips = _trips(monkeypatch)
     agent, _ = _captured_agent(fail_types=frozenset({OrderType.STOP_MARKET}))
     agent.context.exchange.positions.close_position = AsyncMock(side_effect=RuntimeError("down"))
 
@@ -121,6 +137,9 @@ async def test_flatten_failure_raises_alert_and_does_not_raise():
     (alert,) = _published(agent, HealthCheckFailed)
     assert "fechamento também falhou" in alert.detail
     assert _published(agent, OrderFilled) == []
+    # R3: posição desprotegida → trava global
+    (trip,) = trips
+    assert trip["rule"] == "protection_failure" and "symbol" not in trip
 
 
 async def test_setting_off_keeps_position_and_still_sends_take_profit(monkeypatch):

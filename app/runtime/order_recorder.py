@@ -133,8 +133,10 @@ class RecordingOrderProvider(OrderProvider):
     async def cancel_all_algo_orders(self, symbol: str) -> int:
         return await self._inner.cancel_all_algo_orders(symbol)
 
-    async def list_open_conditional_orders(self, symbol: str | None) -> list[Order]:
-        return await self._inner.list_open_conditional_orders(symbol)
+    async def list_open_conditional_orders(
+        self, symbol: str | None, *, strict: bool = False
+    ) -> list[Order]:
+        return await self._inner.list_open_conditional_orders(symbol, strict=strict)
 
     async def get_conditional_order(self, symbol: str, exchange_order_id: str) -> Order:
         order = await self._inner.get_conditional_order(symbol, exchange_order_id)

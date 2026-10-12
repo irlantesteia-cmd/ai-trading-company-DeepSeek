@@ -131,12 +131,14 @@ class BinanceOrderProvider(OrderProvider):
             fills=[],
         )
 
-    async def list_open_algo_orders(self, symbol: str | None = None) -> list[Order]:
+    async def list_open_algo_orders(
+        self, symbol: str | None = None, *, strict: bool = False
+    ) -> list[Order]:
         """Lista ordens condicionais abertas (Algo Order API).
 
         Isolamento por ordem: uma payload malformada é logada e ignorada,
         sem derrubar o listing inteiro. Retorna lista vazia em caso de
-        erro no request.
+        erro no request, salvo com `strict` (aí a exceção sobe).
         """
         params: dict = {}
         if symbol:
@@ -150,12 +152,16 @@ class BinanceOrderProvider(OrderProvider):
                 params=params,
             )
         except ExchangeError as exc:
+            if strict:
+                raise
             logger.warning(
                 "binance.list_open_algo_orders_failed",
                 extra={"symbol": symbol, "error": str(exc)},
             )
             return []
         except Exception:
+            if strict:
+                raise
             logger.exception(
                 "binance.list_open_algo_orders_error",
                 extra={"symbol": symbol},
@@ -180,8 +186,10 @@ class BinanceOrderProvider(OrderProvider):
                 )
         return orders
 
-    async def list_open_conditional_orders(self, symbol: str | None) -> list[Order]:
-        return await self.list_open_algo_orders(symbol)
+    async def list_open_conditional_orders(
+        self, symbol: str | None, *, strict: bool = False
+    ) -> list[Order]:
+        return await self.list_open_algo_orders(symbol, strict=strict)
 
     async def get_conditional_order(self, symbol: str, exchange_order_id: str) -> Order:
         """Consulta uma ordem algo pelo `algoId` (`GET /fapi/v1/algoOrder`)."""
