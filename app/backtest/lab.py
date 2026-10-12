@@ -21,6 +21,7 @@ from app.backtest.data import load_candles, load_funding
 from app.backtest.engine import BacktestEngine
 from app.backtest.gate import GateCheck, GateCriteria, GateVerdict, evaluate_gate
 from app.backtest.regime import classify_regimes
+from app.backtest.registry import bonferroni
 from app.backtest.stats import FoldStats, TradeStats, bootstrap_mean_ci, summarize, walk_forward
 from app.backtest.types import BacktestConfig, BacktestTrade
 from app.core.enums import MarketType
@@ -74,6 +75,9 @@ class LabConfig(BaseModel):
     folds: int = 5
     seed: int = 42
     random_replicates: int = 200
+    # Hipóteses declaradas já testadas, incluindo esta (correção de Bonferroni
+    # do p do timing aleatório). 1 = sem correção.
+    tested_hypotheses: int = 1
     criteria: GateCriteria = Field(default_factory=GateCriteria)
 
 
@@ -104,6 +108,7 @@ class LabReport(BaseModel):
     max_drawdown_pct: float
     verdict: GateVerdict
     timing: TimingTest = Field(default_factory=TimingTest)
+    timing_p_adjusted: float = 1.0
     limitations: list[str] = Field(default_factory=lambda: list(LIMITATIONS))
 
 
@@ -205,10 +210,15 @@ async def run_lab(
     folds = walk_forward(trades, start=period_start, end=period_end, folds=config.folds)
     max_dd = max(r.max_drawdown_pct for r in runs)
     timing = random_timing_test(timing_runs, replicates=config.random_replicates, seed=config.seed)
+    n_tests = max(1, config.tested_hypotheses)
+    p_adjusted = bonferroni(timing.p_value, n_tests)
     timing_check = GateCheck(
         name="timing_vs_aleatorio",
-        passed=timing.trades > 0 and timing.p_value <= config.criteria.max_random_p_value,
-        value=f"p={timing.p_value:.3f}",
+        passed=timing.trades > 0 and p_adjusted <= config.criteria.max_random_p_value,
+        value=(
+            f"p={timing.p_value:.3f}" if n_tests == 1
+            else f"p={timing.p_value:.3f} × {n_tests} hipóteses = {p_adjusted:.3f}"
+        ),
         required=f"<= {config.criteria.max_random_p_value}",
     )
     return LabReport(
@@ -228,6 +238,7 @@ async def run_lab(
             criteria=config.criteria, extra_checks=[timing_check],
         ),
         timing=timing,
+        timing_p_adjusted=p_adjusted,
     )
 
 
@@ -256,7 +267,12 @@ def _benchmarks(r: LabReport) -> list[str]:
         (
             f"| Timing aleatório (mesmo lado e duração, {t.replicates} réplicas) | bruto "
             f"{t.random_gross_pct:+.3f}%/trade (IC 95% {t.random_ci95[0]:+.3f}% a {t.random_ci95[1]:+.3f}%) "
-            f"× estratégia {t.strategy_gross_pct:+.3f}% → **p = {t.p_value:.3f}** |"
+            f"× estratégia {t.strategy_gross_pct:+.3f}% → **p = {t.p_value:.3f}**"
+            + (
+                f"; corrigido por {r.config.tested_hypotheses} hipóteses testadas: "
+                f"**{r.timing_p_adjusted:.3f}** |"
+                if r.config.tested_hypotheses > 1 else " |"
+            )
         ),
         "",
         (

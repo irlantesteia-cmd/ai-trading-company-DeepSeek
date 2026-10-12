@@ -185,8 +185,13 @@ Logs: JSON estruturado no stdout do container (`docker compose logs app`), em
 **Nenhuma estratégia vai ao bot ao vivo sem passar pelo gate do laboratório**
 (`app/backtest/gate.py`): ≥ 300 trades, limite inferior do IC 95% do
 resultado líquido > 0, ≥ 4 de 5 blocos de tempo positivos, profit factor > 1,1
-e drawdown ≤ 20%. A configuração principal é declarada **antes** de rodar,
-e parâmetros não são ajustados depois de ver o resultado.
+e drawdown ≤ 20%. Desde a Fase 4, também precisa **vencer o acaso**: o
+bruto médio é comparado com entradas aleatórias de mesmo lado e duração, e o
+p-valor é corrigido pelo número de hipóteses já declaradas
+(`docs/research/hypotheses.json`) — quanto mais tentativas, mais exigente.
+A configuração principal é declarada **antes** de rodar, e parâmetros não são
+ajustados depois de ver o resultado; varreduras de parâmetros (`--sweep`)
+servem só para medir sensibilidade.
 
 | Data | Hipótese | Resultado |
 |---|---|---|
