@@ -113,3 +113,9 @@ def test_cli_sweep_and_declared_options():
         parse_cli(["--strategy", "trend_breakout", "--sweep", "channel_period=15", "--declared", "X"])
     with pytest.raises(SystemExit):
         parse_cli(["--strategy", "trend_breakout", "--sweep", "channel_period"])
+
+
+def test_declared_registry_is_written_with_lf(tmp_path):
+    path = tmp_path / "hypotheses.json"
+    append_declared(_hyp("A"), path)
+    assert b"\r\n" not in path.read_bytes()

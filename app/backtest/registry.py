@@ -57,6 +57,7 @@ def append_declared(entry: DeclaredHypothesis, path: Path = DECLARED_PATH) -> in
     path.write_text(
         json.dumps([e.model_dump() for e in entries], ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
+        newline="\n",  # arquivo versionado: LF também no Windows
     )
     return len(entries)
 
