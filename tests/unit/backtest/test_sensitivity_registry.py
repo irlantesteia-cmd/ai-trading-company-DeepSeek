@@ -119,3 +119,9 @@ def test_declared_registry_is_written_with_lf(tmp_path):
     path = tmp_path / "hypotheses.json"
     append_declared(_hyp("A"), path)
     assert b"\r\n" not in path.read_bytes()
+
+
+def test_record_run_keeps_the_commit_captured_at_start(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    entry = record_run("lab", {}, path, commit="abc1234+dirty")
+    assert entry["git_commit"] == "abc1234+dirty"

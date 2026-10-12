@@ -37,7 +37,13 @@ from pydantic import BaseModel
 from app.backtest import portfolio_lab, sweep
 from app.backtest.lab import STRATEGIES, LabConfig, run_lab, to_markdown
 from app.backtest.portfolio import XSMomentumParams
-from app.backtest.registry import DeclaredHypothesis, append_declared, load_declared, record_run
+from app.backtest.registry import (
+    DeclaredHypothesis,
+    append_declared,
+    git_commit,
+    load_declared,
+    record_run,
+)
 
 # (entrada, saída) em bps. Maker: ordem limite na entrada; a saída (SL/TP/tempo)
 # é sempre a mercado, então taker.
@@ -163,6 +169,7 @@ def _universe(config) -> str:
 def main(argv: list[str] | None = None) -> Path:
     logging.basicConfig(level=logging.WARNING)
     config, grid, declared = parse_cli(argv)
+    commit = git_commit()  # o código que vai rodar, antes de qualquer commit no meio
     report: BaseModel
     verdict = net = ci_low = timing_p = None
     if grid:
@@ -191,6 +198,7 @@ def main(argv: list[str] | None = None) -> Path:
         {"report": str(stem), "strategy": config.strategy, "declared": declared,
          "config": config.model_dump(mode="json"), "grid": grid or None,
          "approved": verdict, "net_pct": net, "ci95_low": ci_low, "timing_p": timing_p},
+        commit=commit,
     )
     if declared:
         n = append_declared(DeclaredHypothesis(

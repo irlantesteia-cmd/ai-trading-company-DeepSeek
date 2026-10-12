@@ -78,11 +78,18 @@ def git_commit() -> str:
     return f"{head}+dirty" if dirty else head
 
 
-def record_run(kind: str, summary: dict[str, Any], path: Path = RUNS_PATH) -> dict[str, Any]:
-    """Acrescenta uma linha ao registro local de execuções."""
+def record_run(
+    kind: str,
+    summary: dict[str, Any],
+    path: Path = RUNS_PATH,
+    *,
+    commit: str | None = None,
+) -> dict[str, Any]:
+    """Acrescenta uma linha ao registro local de execuções. `commit`: o do
+    código que rodou, capturado no INÍCIO (execuções longas atravessam commits)."""
     entry = {
         "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "git_commit": git_commit(),
+        "git_commit": commit or git_commit(),
         "kind": kind,
         **summary,
     }
