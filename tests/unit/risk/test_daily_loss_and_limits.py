@@ -8,6 +8,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.core.enums import MarginType, MarketType, PositionSide, RiskAction, SignalDirection
 from app.domain.models.position import FuturesPosition
@@ -158,3 +159,19 @@ def test_day_start_is_utc_midnight():
 
     brt = datetime(2026, 10, 9, 22, 0, tzinfo=timezone(timedelta(hours=-3)))  # 01:00 UTC do dia 10
     assert day_start_utc(brt) == datetime(2026, 10, 10, tzinfo=UTC)
+
+
+async def test_streak_restarts_after_the_last_manual_resume():
+    """Sem isso, depois de N perdas a trava nunca saía: o `resume` não zerava a
+    contagem e o próximo sinal travava de novo (a trava impede o trade que a
+    zeraria)."""
+    session = _Session(realized=Decimal(0), recent=[])
+    await load_portfolio_state(_exchange([]), lambda: session, now=NOW)
+
+    streak_sql = str(session.statements[1].compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    ))
+    assert "FROM trading_halts" in streak_sql
+    assert "trading_halts.rule = 'consecutive_losses'" in streak_sql
+    assert "max(trading_halts.cleared_at)" in streak_sql
+    assert "round_trips.closed_at >" in streak_sql
