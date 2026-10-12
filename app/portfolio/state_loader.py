@@ -7,7 +7,10 @@ com `daily_pnl=0` fixo, então o limite de perda diária nunca disparava.
 - `daily_pnl`: P&L líquido realizado desde 00:00 UTC (`round_trips` fechados)
   + P&L não realizado das posições abertas;
 - `consecutive_losses`: round trips fechados com `net_pnl < 0` em sequência,
-  do mais recente para trás;
+  do mais recente para trás, contando só os fechados **depois** da última
+  liberação (`resume`) da trava `consecutive_losses`. Sem isso a contagem
+  nunca zeraria: a trava impede a operação sem prejuízo que a zeraria, e o
+  próximo sinal travaria de novo logo após o `resume`;
 - `active_halts`: travas de trading ativas (`trading_halts`).
 
 Sem `session_factory` (testes, scripts), a parte do banco vale zero. Falha
@@ -20,14 +23,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.enums import RoundTripStatus
 from app.database.models.round_trip import RoundTripORM
+from app.database.models.trading_halt import TradingHaltORM
 from app.database.repositories.trading_halt import TradingHaltRepository
 from app.exchanges.base.exchange import Exchange
 from app.portfolio.state import HaltInfo, PortfolioState
+from app.risk.engine import RULE_CONSECUTIVE_LOSSES
 
 # Janela para contar perdas seguidas: mais que qualquer limite razoável.
 _STREAK_LOOKBACK = 50
@@ -81,9 +86,23 @@ async def _realized_stats(
     realized_stmt = select(func.coalesce(func.sum(RoundTripORM.net_pnl), 0)).where(
         closed, RoundTripORM.closed_at >= day_start
     )
+    # Última liberação humana da trava de perdas seguidas: a sequência
+    # recomeça dali (None = nunca liberada).
+    reset_at = (
+        select(func.max(TradingHaltORM.cleared_at))
+        .where(
+            TradingHaltORM.rule == RULE_CONSECUTIVE_LOSSES,
+            TradingHaltORM.cleared_at.is_not(None),
+        )
+        .scalar_subquery()
+    )
     recent_stmt = (
         select(RoundTripORM.net_pnl)
-        .where(closed, RoundTripORM.net_pnl.is_not(None))
+        .where(
+            closed,
+            RoundTripORM.net_pnl.is_not(None),
+            or_(reset_at.is_(None), RoundTripORM.closed_at > reset_at),
+        )
         .order_by(RoundTripORM.closed_at.desc())
         .limit(_STREAK_LOOKBACK)
     )
