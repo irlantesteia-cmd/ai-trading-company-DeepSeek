@@ -80,7 +80,7 @@ def risk_agent(monkeypatch):
         return created["value"]
 
     monkeypatch.setattr(
-        "app.agents.risk.TradingHaltRepository.create_if_absent", create_if_absent
+        "app.database.repositories.trading_halt.TradingHaltRepository.create_if_absent", create_if_absent
     )
     context = MagicMock()
     context.session_factory = _Session
@@ -131,10 +131,10 @@ async def test_auto_halt_db_failure_is_logged_not_raised(risk_agent, monkeypatch
     async def boom(_self, **kw):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr("app.agents.risk.TradingHaltRepository.create_if_absent", boom)
+    monkeypatch.setattr("app.database.repositories.trading_halt.TradingHaltRepository.create_if_absent", boom)
     decision = await agent.evaluate(_signal(), _state(daily_pnl=Decimal(-95)))
     assert decision.action is RiskAction.REJECT
-    assert "risk.auto_halt_failed" in caplog.text
+    assert "halt_guard.trip_failed" in caplog.text
 
 
 # ------------------------------------------------------ trading_control

@@ -45,7 +45,11 @@ class OrderProvider(ABC):
             f"{type(self).__name__} não suporta ordens condicionais"
         )
 
-    async def list_open_conditional_orders(self, symbol: str | None) -> list[Order]:
+    async def list_open_conditional_orders(
+        self, symbol: str | None, *, strict: bool = False
+    ) -> list[Order]:
+        """`strict`: erro na consulta levanta exceção em vez de lista vazia
+        (quem decide pela ausência de ordens precisa distinguir os dois)."""
         raise NotImplementedError(
             f"{type(self).__name__} não suporta ordens condicionais"
         )

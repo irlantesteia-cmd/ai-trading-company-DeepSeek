@@ -4,15 +4,14 @@ import logging
 from decimal import Decimal
 
 from app.agents.base import BaseAgent
-from app.core.enums import AgentRole, HaltScope, HaltSource, RiskAction
-from app.database.repositories.trading_halt import TradingHaltRepository
+from app.core.enums import AgentRole, RiskAction
 from app.domain.models.risk import RiskDecision
 from app.domain.models.signal import Signal
-from app.events.event import HealthCheckFailed
 from app.portfolio.state import PortfolioState
 from app.portfolio.state_loader import load_portfolio_state
 from app.risk.engine import AUTO_HALT_RULES, RiskEngine
 from app.risk.limits import RiskLimits
+from app.runtime.halt_guard import HaltGuard
 
 logger = logging.getLogger(__name__)
 
@@ -66,35 +65,14 @@ class RiskAgent(BaseAgent):
     async def _auto_halt(self, decision: RiskDecision) -> None:
         """Limite crítico estourado → trava global persistente (§22 do projeto:
         TRADING HALTED; só libera por `scripts/trading_control.py resume`)."""
-        session_factory = self.context.session_factory
-        if session_factory is None or decision.rule is None:
+        if decision.rule is None:
             return
-        try:
-            async with session_factory() as session:
-                created = await TradingHaltRepository(session).create_if_absent(
-                    scope=HaltScope.GLOBAL,
-                    symbol=None,
-                    source=HaltSource.AUTO,
-                    rule=decision.rule,
-                    reason=decision.reason,
-                    created_by=self.name,
-                )
-                await session.commit()
-        except Exception:
-            logger.exception("risk.auto_halt_failed", extra={"rule": decision.rule})
-            return
-        if created is None:
-            return  # já havia trava ativa por esta regra
-        logger.warning(
-            "risk.trading_halted",
-            extra={"rule": decision.rule, "reason": decision.reason},
+        guard = HaltGuard(
+            session_factory=self.context.session_factory,
+            event_bus=self.context.event_bus,
+            created_by=self.name,
         )
-        await self.context.event_bus.publish(
-            HealthCheckFailed(
-                component="trading_halt",
-                detail=f"TRADING HALTED ({decision.rule}): {decision.reason}",
-            )
-        )
+        await guard.trip(rule=decision.rule, reason=decision.reason)
 
     async def load_state(self) -> PortfolioState:
         return await load_portfolio_state(

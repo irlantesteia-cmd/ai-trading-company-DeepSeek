@@ -18,6 +18,7 @@ from app.events.event import (
     OrderSubmitted,
 )
 from app.exchanges.symbol_info import SymbolInfoService
+from app.runtime.halt_guard import RULE_PROTECTION, RULE_PROTECTION_FAILURE, HaltGuard
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,13 @@ class ExecutionAgent(BaseAgent):
                 "status": order.status.value,
             })
         return order
+
+    def _halt_guard(self) -> HaltGuard:
+        return HaltGuard(
+            session_factory=self.context.session_factory,
+            event_bus=self.context.event_bus,
+            created_by=self.name,
+        )
 
     def _quantize_quantity(self, intent: OrderIntent) -> Decimal:
         original = intent.quantity
@@ -244,12 +252,21 @@ class ExecutionAgent(BaseAgent):
                 component="protection",
                 detail=f"{intent.symbol}: stop-loss falhou e o fechamento também falhou",
             ))
+            await self._halt_guard().trip(
+                rule=RULE_PROTECTION_FAILURE,
+                reason=f"{intent.symbol}: posição sem stop-loss e o fechamento falhou",
+            )
             return
 
         await self.context.event_bus.publish(HealthCheckFailed(
             component="protection",
             detail=f"{intent.symbol}: stop-loss falhou; posição fechada a mercado",
         ))
+        await self._halt_guard().trip(
+            rule=RULE_PROTECTION,
+            reason="stop-loss falhou; posição fechada a mercado",
+            symbol=intent.symbol,
+        )
         if order is not None and order.fills and order.average_price is not None:
             await self.context.event_bus.publish(OrderFilled(
                 exchange_order_id=order.exchange_order_id,

@@ -24,7 +24,7 @@ from app.agents import (
 )
 from app.core.config import settings
 from app.core.enums import MarketType
-from app.core.exceptions import ConfigurationError, ExchangeAuthError
+from app.core.exceptions import ConfigurationError
 from app.core.logging import setup_logging
 from app.database.session import AsyncSessionLocal, check_connection
 from app.events.bus import EventBus
@@ -50,10 +50,12 @@ from app.runtime.boot_cleanup import (
 )
 from app.runtime.change_generator import HeuristicChangeGenerator
 from app.runtime.evolution import EvolutionLoop
+from app.runtime.halt_guard import HaltGuard
 from app.runtime.heartbeat import HeartbeatMonitor
 from app.runtime.lifecycle import ApplicationLifecycle
 from app.runtime.metrics_collector import MetricsCollector
 from app.runtime.order_recorder import OrderRecorder, RecordingOrderProvider
+from app.runtime.reconcile_monitor import ReconcileMonitor
 from app.runtime.recovery import Reconciler
 from app.runtime.time_exit import TimeExitMonitor
 from app.runtime.user_stream_handler import handle_user_stream_event
@@ -314,23 +316,20 @@ async def main() -> None:
             recorder=order_recorder,
             record_runs=True,
         )
+        monitor = ReconcileMonitor(
+            reconciler=reconciler,
+            exchange=exchange,
+            guard=HaltGuard(
+                session_factory=AsyncSessionLocal,
+                event_bus=event_bus,
+                created_by="reconciler",
+            ),
+            event_bus=event_bus,
+            settings=settings,
+            market_type=market_type,
+        )
         while True:
-            try:
-                report = await reconciler.reconcile(market_type=market_type)
-                if not report.balanced:
-                    await event_bus.publish(
-                        HealthCheckFailed(
-                            component="reconciliation",
-                            detail=f"unresolved={report.unresolved}",
-                        )
-                    )
-            except ExchangeAuthError as exc:
-                logger.warning(
-                    "reconcile.skipped",
-                    extra={"reason": "auth", "detail": str(exc)},
-                )
-            except Exception:
-                logger.exception("reconcile.failed")
+            await monitor.run_once()
             await asyncio.sleep(settings.reconcile_interval_s)
 
     async def backfill_task() -> None:
