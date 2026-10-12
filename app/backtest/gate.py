@@ -19,6 +19,8 @@ class GateCriteria(BaseModel):
     min_positive_folds: int = 4         # de `folds` blocos
     min_profit_factor: float = 1.1
     max_drawdown_pct: float = 20.0
+    # Fase 4: o bruto precisa superar entradas aleatórias de mesmo lado e duração.
+    max_random_p_value: float = 0.05
 
 
 class GateCheck(BaseModel):
