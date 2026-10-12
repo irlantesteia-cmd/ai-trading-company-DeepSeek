@@ -99,6 +99,20 @@ Copy-Item docker/grafana/provisioning/alerting/telegram.yml.example docker/grafa
 docker compose restart grafana
 ```
 
+### Coletor de métricas de mercado
+
+Grava a cada 5 min, para 12 ativos, dados de derivativos que a Binance só
+guarda por ~30 dias (ou nem guarda): open interest, razões long/short, volume
+taker, funding, preço de marcação e o livro de ofertas. Roda separado do bot,
+só lê dados públicos (sem chave, sem ordens) e completa os últimos 30 dias ao
+iniciar. Painéis na seção **Mercado (coletor)** do Grafana.
+
+```powershell
+alembic upgrade head                      # cria a tabela market_metrics
+docker compose up -d --build collector
+docker compose logs -f collector
+```
+
 ### Trava de trading (intervenção humana)
 
 Bloqueia **novas entradas** na hora, sem reiniciar o bot; posições abertas

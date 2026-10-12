@@ -128,6 +128,16 @@ class Settings(BaseSettings):
     github_default_branch: str = "main"
     github_autonomy_enabled: bool = False
 
+    # Coletor de métricas de mercado (scripts/run_collector.py, L5b). Dados
+    # públicos da Binance real (sem chave), independentes do bot.
+    collector_symbols: list[str] = [
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "ADAUSDT",
+        "DOGEUSDT", "LINKUSDT", "AVAXUSDT", "LTCUSDT", "DOTUSDT", "TRXUSDT",
+    ]
+    collector_interval_s: float = 300.0
+    collector_backfill_days: float = 29.5  # a Binance guarda ~30 dias
+    collector_base_url: str = "https://fapi.binance.com"
+
     # Runtime
     heartbeat_max_age_s: float = 120.0
     heartbeat_interval_s: float = 30.0

@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "editable": true,
   "time": {
     "from": "now-7d",
@@ -859,6 +859,165 @@
           "rawSql": "SELECT CASE WHEN cleared_at IS NULL THEN 'ATIVA' ELSE 'liberada' END AS \"Situação\", COALESCE(symbol, 'GLOBAL') AS \"Escopo\", source AS \"Origem\", rule AS \"Regra\", reason AS \"Motivo\", created_at AS \"Criada em\", created_by AS \"Por\", cleared_at AS \"Liberada em\", cleared_by AS \"Liberada por\", clear_note AS \"Obs.\" FROM trading_halts ORDER BY (cleared_at IS NULL) DESC, created_at DESC LIMIT 20"
         }
       ]
+    },
+    {
+      "id": 29,
+      "type": "row",
+      "title": "Mercado (coletor)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 88,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "table",
+      "title": "Mercado agora (por ativo)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "description": "Coletor L5b (dados públicos da Binance real, blocos de 5 min). OI = open interest; long/short > 1 = mais contas/posições compradas; taker > 1 = agressão compradora; livro de -1 (venda) a +1 (compra) nas 20 melhores ofertas.",
+      "gridPos": {
+        "x": 0,
+        "y": 89,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "WITH h AS (\n  SELECT DISTINCT ON (symbol) symbol, ts, open_interest_value, global_ls_ratio, top_ls_position_ratio\n  FROM market_metrics WHERE open_interest_value IS NOT NULL ORDER BY symbol, ts DESC\n), s AS (\n  SELECT DISTINCT ON (symbol) symbol, funding_rate, book_imbalance, spread_bps\n  FROM market_metrics WHERE funding_rate IS NOT NULL ORDER BY symbol, ts DESC\n), t AS (\n  SELECT symbol, SUM(taker_buy_volume) / NULLIF(SUM(taker_sell_volume), 0) AS taker\n  FROM market_metrics WHERE ts > now() - interval '1 hour' GROUP BY symbol\n)\nSELECT h.symbol AS \"Ativo\",\n  ROUND(h.open_interest_value / 1e6, 1) AS \"OI (mi USDT)\",\n  ROUND(100 * (h.open_interest_value / NULLIF(h1.open_interest_value, 0) - 1), 2) AS \"OI 1h %\",\n  ROUND(100 * (h.open_interest_value / NULLIF(d1.open_interest_value, 0) - 1), 2) AS \"OI 24h %\",\n  ROUND(h.global_ls_ratio, 2) AS \"Long/short contas\",\n  ROUND(h.top_ls_position_ratio, 2) AS \"Long/short top traders\",\n  ROUND(t.taker, 2) AS \"Taker compra/venda 1h\",\n  ROUND(100 * s.funding_rate, 4) AS \"Funding %\",\n  ROUND(s.book_imbalance, 2) AS \"Livro (compra - venda)\",\n  ROUND(s.spread_bps, 2) AS \"Spread bps\",\n  h.ts AS \"Atualizado\"\nFROM h\nLEFT JOIN market_metrics h1 ON h1.symbol = h.symbol AND h1.ts = h.ts - interval '1 hour'\nLEFT JOIN market_metrics d1 ON d1.symbol = h.symbol AND d1.ts = h.ts - interval '24 hours'\nLEFT JOIN s ON s.symbol = h.symbol\nLEFT JOIN t ON t.symbol = h.symbol\nORDER BY h.open_interest_value DESC"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Open interest — variação em 24 h (%)",
+      "description": "Alta forte de OI com preço subindo = entrada de alavancagem compradora.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 98,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT time, metric, value FROM (\n  SELECT ts AS time, symbol AS metric,\n    100 * (open_interest_value / NULLIF(LAG(open_interest_value, 288) OVER (PARTITION BY symbol ORDER BY ts), 0) - 1) AS value\n  FROM market_metrics\n  WHERE open_interest_value IS NOT NULL\n    AND ts >= $__timeFrom()::timestamptz - interval '1 day' AND ts <= $__timeTo()::timestamptz\n) x WHERE $__timeFilter(time) AND value IS NOT NULL ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Funding rate (%)",
+      "description": "Funding alto = comprados pagando caro para manter posição (multidão alavancada).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 98,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT ts AS time, symbol AS metric, 100 * funding_rate AS value FROM market_metrics WHERE funding_rate IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Long/short (contas)",
+      "description": "Razão de contas compradas / vendidas na Binance.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 98,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT ts AS time, symbol AS metric, global_ls_ratio AS value FROM market_metrics WHERE global_ls_ratio IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
     }
   ]
 }
