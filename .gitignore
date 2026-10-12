@@ -44,3 +44,6 @@ Thumbs.db
 .claude/skills/
 .agents/
 skills-lock.json
+
+# Contato do Telegram do Grafana (contém o token do bot)
+docker/grafana/provisioning/alerting/telegram.yml

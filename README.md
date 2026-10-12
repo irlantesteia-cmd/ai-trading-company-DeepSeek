@@ -89,6 +89,16 @@ docker compose up -d grafana
 # http://127.0.0.1:3000 — dashboard "Trading — visão geral" (pasta Trading)
 ```
 
+Alertas por Telegram (trava ativa, bot sem reconciliar, perda do dia perto do
+limite): crie um bot no @BotFather, mande uma mensagem a ele e pegue o chat id
+em `https://api.telegram.org/bot<TOKEN>/getUpdates`. Depois:
+
+```powershell
+Copy-Item docker/grafana/provisioning/alerting/telegram.yml.example docker/grafana/provisioning/alerting/telegram.yml
+# edite telegram.yml: token e chat id (o arquivo fica fora do git)
+docker compose restart grafana
+```
+
 ### Trava de trading (intervenção humana)
 
 Bloqueia **novas entradas** na hora, sem reiniciar o bot; posições abertas

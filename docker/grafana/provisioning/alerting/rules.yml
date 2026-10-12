@@ -1,0 +1,129 @@
+# Regras de alerta do bot (avaliadas a cada minuto, enviadas ao Telegram).
+# O que fazer em cada trava: docs/ARCHITECTURE.md, seção 3.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Trading
+    folder: Trading
+    interval: 1m
+    rules:
+      # Uma instância por trava ativa (regra e escopo viram rótulos). Travas de
+      # proteção (posição possivelmente sem stop) saem marcadas como URGENTE.
+      - uid: trading-halt-active
+        title: Trava de trading ativa
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: pg-trading
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              rawSql: >-
+                SELECT COALESCE(symbol, 'GLOBAL') AS escopo,
+                       rule AS regra,
+                       CASE WHEN rule IN ('protection_failure', 'unprotected_position')
+                            THEN 'URGENTE' ELSE 'normal' END AS prioridade,
+                       1 AS value
+                FROM trading_halts
+                WHERE cleared_at IS NULL
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "TRADING TRAVADO ({{ .Labels.prioridade }}): {{ .Labels.regra }} [{{ .Labels.escopo }}]"
+          description: >-
+            Novas entradas bloqueadas. Veja o motivo com
+            `trading_control.py status` e o que conferir em docs/ARCHITECTURE.md (seção 3).
+            Libere só depois de revisar: `trading_control.py resume --note "..."`.
+
+      # A reconciliação grava uma linha a cada 5 min: sem linha nova há mais de
+      # 15 min, o bot parou, travou ou perdeu acesso à Binance/banco.
+      - uid: trading-bot-silent
+        title: Bot sem reconciliar
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: pg-trading
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              rawSql: >-
+                SELECT COALESCE(EXTRACT(EPOCH FROM (now() - MAX(checked_at))) / 60.0, 99999)
+                       AS value
+                FROM reconciliation_runs
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [15] }
+        noDataState: Alerting
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Bot sem reconciliar há {{ printf \"%.0f\" .Values.B.Value }} min"
+          description: >-
+            O bot pode ter caído ou travado. Confira `docker compose ps` e
+            `docker compose logs --tail 100 app`. Se você desligou o bot de
+            propósito, este aviso é esperado (silencie no Grafana).
+
+      # Prejuízo do dia (P&L realizado desde 00:00 UTC) passando de 2%: aviso
+      # antes da trava de perda diária (3%).
+      - uid: trading-daily-loss-warning
+        title: Perda do dia perto do limite
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: pg-trading
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              rawSql: >-
+                SELECT COALESCE(SUM(net_pnl), 0) AS value
+                FROM round_trips
+                WHERE status = 'CLOSED' AND closed_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [-60] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Prejuízo realizado hoje: {{ printf \"%.2f\" .Values.B.Value }} USDT"
+          description: >-
+            Perto do limite de perda diária (a trava sai em cerca de -92 USDT com
+            3% de ~3.080). Acompanhe no Grafana.
