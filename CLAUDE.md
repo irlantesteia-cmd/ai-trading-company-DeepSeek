@@ -122,6 +122,15 @@ positions plus a minimum number of periods.
 .\.venv\Scripts\python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 --trailing-stop --funding
 ```
 
+### Market data collector
+
+`scripts/run_collector.py` (compose service `collector`, no `.env`, `restart: unless-stopped`) runs
+`app/market/collector.py` independently of the bot: every 5 min it stores public derivatives data
+(open interest, long/short ratios, taker volume, premium/funding, top-20 book) for
+`COLLECTOR_SYMBOLS` into `market_metrics` (one row per symbol and 5-min block; sources merge
+via a non-null-wins upsert) and backfills up to ~30 days on start, since Binance keeps no longer
+history. It is the data source for research on non-price signals.
+
 ### Data and tests
 
 Postgres tables include `orders`, `order_fills`, `trades`, `round_trips`, `signals`, `candles`,

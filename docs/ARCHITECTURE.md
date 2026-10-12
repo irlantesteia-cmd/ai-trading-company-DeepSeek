@@ -148,6 +148,7 @@ Banco Postgres (migrações em `migrations/versions/`):
 | `round_trips` | Operação completa (entrada até saída), com P&L, taxas e motivo de fechamento (stop, alvo, tempo, manual). |
 | `reconciliation_runs` | Cada reconciliação: ordens abertas dos dois lados, divergências e se ficou equilibrada. |
 | `trading_halts` | Travas ativas e o histórico de quem liberou e com qual nota. |
+| `market_metrics` | Coletor (fora do bot): open interest, long/short, volume taker, funding e livro de ofertas por ativo, a cada 5 min. Base para pesquisar estratégias com esses dados. |
 | `candles`, `trading_pairs`, `futures_position_snapshots` | Dados de mercado, cadastro de pares e fotos de posições. |
 
 O Grafana lê o banco com um usuário só de leitura (`grafana_ro`). Seções do
@@ -158,6 +159,7 @@ dashboard:
 - **Ordens**: ordens por status, SL/TP abertos e ordens rejeitadas.
 - **Dados de mercado**: último candle por ativo (se parou de atualizar, o stream caiu).
 - **Sinais e reconciliação**: decisões por hora, motivos de rejeição, minutos desde a última reconciliação e divergências.
+- **Mercado (coletor)**: por ativo, open interest e sua variação em 1 h/24 h, long/short, agressão taker, funding, desequilíbrio do livro e spread.
 
 **Alertas** (`docker/grafana/provisioning/alerting/`), avaliados a cada
 minuto e enviados ao Telegram quando `telegram.yml` está configurado (veja o

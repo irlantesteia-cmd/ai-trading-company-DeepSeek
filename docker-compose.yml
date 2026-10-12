@@ -76,6 +76,27 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  # Coletor de métricas de mercado (L5b): só lê dados públicos da Binance
+  # (sem chave, sem ordens), então não recebe o .env e pode ficar sempre
+  # ligado. Rode `alembic upgrade head` antes (tabela market_metrics).
+  #   docker compose up -d --build collector
+  collector:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["python", "scripts/run_collector.py"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/ai_trading?ssl=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres_data:
   grafana_data:
