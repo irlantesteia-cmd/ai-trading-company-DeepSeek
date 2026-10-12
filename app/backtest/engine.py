@@ -153,6 +153,8 @@ class BacktestEngine:
             equity_curve=equity_curve,
         )
         metrics["ruined"] = 1.0 if ruined or equity <= ruin_level else 0.0
+        # Exposição: % das barras com posição aberta.
+        metrics["exposure_pct"] = 100 * sum(t.bars_held for t in trades) / len(candles)
         total_return_pct = float(
             (equity - cfg.initial_capital) / cfg.initial_capital * 100
         )

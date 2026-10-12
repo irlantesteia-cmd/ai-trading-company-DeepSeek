@@ -16,9 +16,10 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.backtest.benchmarks import BuyHold, TimingTest, buy_and_hold, random_timing_test
 from app.backtest.data import load_candles, load_funding
 from app.backtest.engine import BacktestEngine
-from app.backtest.gate import GateCriteria, GateVerdict, evaluate_gate
+from app.backtest.gate import GateCheck, GateCriteria, GateVerdict, evaluate_gate
 from app.backtest.regime import classify_regimes
 from app.backtest.stats import FoldStats, TradeStats, bootstrap_mean_ci, summarize, walk_forward
 from app.backtest.types import BacktestConfig, BacktestTrade
@@ -45,6 +46,10 @@ LIMITATIONS = [
         "Funding (quando ligado) usa as taxas reais liquidadas durante o trade "
         "sobre o notional de entrada; o funding real usa o notional no momento."
     ),
+    (
+        "Timing aleatório: a saída placebo usa o fechamento da última barra, não o "
+        "preço intrabarra de stop/alvo; compara bruto com bruto."
+    ),
 ]
 
 CandleLoader = Callable[[str, str, float], Awaitable[list[Candle]]]
@@ -68,6 +73,7 @@ class LabConfig(BaseModel):
     risk_per_trade_pct: float = 0.01
     folds: int = 5
     seed: int = 42
+    random_replicates: int = 200
     criteria: GateCriteria = Field(default_factory=GateCriteria)
 
 
@@ -78,6 +84,10 @@ class RunSummary(BaseModel):
     max_drawdown_pct: float
     ruined: bool = False  # capital simulado zerou: entradas pararam ali
     stats: TradeStats
+    total_return_pct: float = 0.0
+    exposure_pct: float = 0.0
+    max_dd_duration_days: float = 0.0
+    buy_hold: BuyHold | None = None
 
 
 class LabReport(BaseModel):
@@ -93,6 +103,7 @@ class LabReport(BaseModel):
     by_volatility: dict[str, TradeStats]
     max_drawdown_pct: float
     verdict: GateVerdict
+    timing: TimingTest = Field(default_factory=TimingTest)
     limitations: list[str] = Field(default_factory=lambda: list(LIMITATIONS))
 
 
@@ -144,6 +155,7 @@ async def run_lab(
     )
     runs: list[RunSummary] = []
     trades: list[BacktestTrade] = []
+    timing_runs: list[tuple[list[Candle], list[BacktestTrade]]] = []
     starts: list[datetime] = []
     ends: list[datetime] = []
     for interval in config.intervals:
@@ -167,6 +179,7 @@ async def run_lab(
                 funding_rates=funding,
             )
             trades.extend(result.trades)
+            timing_runs.append((candles, result.trades))
             starts.append(candles[0].open_time)
             ends.append(candles[-1].close_time)
             runs.append(
@@ -177,6 +190,10 @@ async def run_lab(
                     max_drawdown_pct=result.metrics.get("max_drawdown_pct", 0.0),
                     ruined=bool(result.metrics.get("ruined")),
                     stats=summarize(result.trades),
+                    total_return_pct=result.total_return_pct,
+                    exposure_pct=result.metrics.get("exposure_pct", 0.0),
+                    max_dd_duration_days=result.metrics.get("max_dd_duration_days", 0.0),
+                    buy_hold=buy_and_hold(candles),
                 )
             )
     if not runs:
@@ -187,6 +204,13 @@ async def run_lab(
     ci = bootstrap_mean_ci([t.return_pct for t in trades], seed=config.seed)
     folds = walk_forward(trades, start=period_start, end=period_end, folds=config.folds)
     max_dd = max(r.max_drawdown_pct for r in runs)
+    timing = random_timing_test(timing_runs, replicates=config.random_replicates, seed=config.seed)
+    timing_check = GateCheck(
+        name="timing_vs_aleatorio",
+        passed=timing.trades > 0 and timing.p_value <= config.criteria.max_random_p_value,
+        value=f"p={timing.p_value:.3f}",
+        required=f"<= {config.criteria.max_random_p_value}",
+    )
     return LabReport(
         generated_at=datetime.now(UTC),
         config=config,
@@ -200,8 +224,10 @@ async def run_lab(
         by_volatility=_group(trades, lambda t: t.regime_vol),
         max_drawdown_pct=max_dd,
         verdict=evaluate_gate(
-            overall=overall, ci=ci, folds=folds, max_drawdown_pct=max_dd, criteria=config.criteria
+            overall=overall, ci=ci, folds=folds, max_drawdown_pct=max_dd,
+            criteria=config.criteria, extra_checks=[timing_check],
         ),
+        timing=timing,
     )
 
 
@@ -213,6 +239,35 @@ def _group(trades: list[BacktestTrade], key) -> dict[str, TradeStats]:
 
 
 # ------------------------------------------------------------------ relatório
+def _benchmarks(r: LabReport) -> list[str]:
+    t, o = r.timing, r.overall
+    holds = [x.buy_hold for x in r.runs if x.buy_hold is not None]
+    bh = sum(h.return_pct for h in holds) / len(holds) if holds else 0.0
+    bh_dd = sum(h.max_drawdown_pct for h in holds) / len(holds) if holds else 0.0
+    strat = sum(x.total_return_pct for x in r.runs) / len(r.runs) if r.runs else 0.0
+    return [
+        "## Benchmarks",
+        "",
+        "| Referência | Resultado |",
+        "|---|---|",
+        f"| Estratégia | líquido {o.avg_net_pct:+.3f}%/trade; retorno médio por execução {strat:+.1f}% |",
+        "| Não operar | 0% (nenhum custo, nenhum risco) |",
+        f"| Comprar e segurar (média dos ativos) | {bh:+.1f}% no período; drawdown médio {bh_dd:.1f}% |",
+        (
+            f"| Timing aleatório (mesmo lado e duração, {t.replicates} réplicas) | bruto "
+            f"{t.random_gross_pct:+.3f}%/trade (IC 95% {t.random_ci95[0]:+.3f}% a {t.random_ci95[1]:+.3f}%) "
+            f"× estratégia {t.strategy_gross_pct:+.3f}% → **p = {t.p_value:.3f}** |"
+        ),
+        "",
+        (
+            f"Expectativa: {100 * o.win_rate:.1f}% × {o.avg_win_pct:+.3f}% − "
+            f"{100 * (1 - o.win_rate):.1f}% × {o.avg_loss_pct:.3f}% = {o.avg_net_pct:+.3f}% por trade "
+            f"| Sortino por trade: {o.sortino:.3f}"
+        ),
+        "",
+    ]
+
+
 def _row(label: str, s: TradeStats) -> str:
     pf = "inf" if s.profit_factor == float("inf") else f"{s.profit_factor:.2f}"
     return (
@@ -257,10 +312,21 @@ def to_markdown(r: LabReport) -> str:
             f"{r.ci95_net_pct[1]:+.4f}%** | drawdown máx.: {r.max_drawdown_pct:.1f}%"
         ),
         "",
+        *_benchmarks(r),
         "## Por símbolo e timeframe",
         "",
         _HEADER,
         *[_row(f"{x.symbol} {x.interval}{' (ruína)' if x.ruined else ''}", x.stats) for x in r.runs],
+        "",
+        "| | Retorno total | Comprar e segurar | DD máx. | DD do ativo | Maior DD (dias) | Exposição |",
+        "|---|---|---|---|---|---|---|",
+        *[
+            f"| {x.symbol} {x.interval} | {x.total_return_pct:+.1f}% "
+            f"| {x.buy_hold.return_pct if x.buy_hold else 0:+.1f}% | {x.max_drawdown_pct:.1f}% "
+            f"| {x.buy_hold.max_drawdown_pct if x.buy_hold else 0:.1f}% "
+            f"| {x.max_dd_duration_days:.0f} | {x.exposure_pct:.0f}% |"
+            for x in r.runs
+        ],
         "",
         "## Walk-forward (blocos cronológicos)",
         "",

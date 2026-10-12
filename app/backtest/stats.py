@@ -23,6 +23,10 @@ class TradeStats(BaseModel):
     avg_funding_pct: float = 0.0  # funding pago (+) / recebido (-)
     avg_net_pct: float = 0.0
     profit_factor: float = 0.0  # soma dos líquidos positivos / |soma dos negativos|
+    # Expectativa = win_rate × ganho médio − (1 − win_rate) × perda média = líquido médio.
+    avg_win_pct: float = 0.0    # líquido médio dos trades positivos
+    avg_loss_pct: float = 0.0   # |líquido médio| dos trades negativos ou zero
+    sortino: float = 0.0        # por trade: líquido médio / desvio só das perdas
 
 
 def summarize(trades: Sequence[BacktestTrade]) -> TradeStats:
@@ -40,6 +44,9 @@ def summarize(trades: Sequence[BacktestTrade]) -> TradeStats:
     avg_net = sum(net) / n
     avg_gross = sum(gross) / n
     avg_funding = sum(t.funding_pct for t in trades) / n
+    winners = [x for x in net if x > 0]
+    losers = [x for x in net if x <= 0]
+    downside = (sum(min(x, 0.0) ** 2 for x in net) / n) ** 0.5
     return TradeStats(
         trades=n,
         win_rate=sum(1 for x in net if x > 0) / n,
@@ -48,6 +55,9 @@ def summarize(trades: Sequence[BacktestTrade]) -> TradeStats:
         avg_funding_pct=avg_funding,
         avg_net_pct=avg_net,
         profit_factor=pf,
+        avg_win_pct=sum(winners) / len(winners) if winners else 0.0,
+        avg_loss_pct=-sum(losers) / len(losers) if losers else 0.0,
+        sortino=avg_net / downside if downside > 0 else 0.0,
     )
 
 
