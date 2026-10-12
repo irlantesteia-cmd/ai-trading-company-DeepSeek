@@ -2,6 +2,9 @@
 
 Sistema de Day Trade autônomo, multi-IA, multi-ativo, operando na Binance.
 
+Como o sistema funciona, as camadas de proteção e o que fazer em cada trava:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Princípios
 
 - Desenvolvimento incremental e auditável.
