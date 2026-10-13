@@ -140,7 +140,12 @@ history. It is the data source for research on non-price signals.
 (default `L6-shadow`) and its `shadow_start` (T0) from `docs/research/hypotheses.json` (bind-mounted
 read-only), replays every symbol × interval with `run_shadow` and writes `shadow_trades` plus one
 `shadow_runs` row per cycle. Without a registered T0 it only records `NOT_REGISTERED`; a T0 earlier
-than the registration date is refused.
+than the registration date is refused. `L6-shadow` is pre-registered with T0 = 2026-10-15 00:00 UTC.
+`scripts/shadow_report.py` (`app/backtest/shadow_report.py`) applies the pre-registered stopping rule:
+interim look at the first 100 closed trades (informational only), final verdict at the first 300 closed
+trades or 12 months, with the lab gate and no Bonferroni (one confirmatory test). Each stage evaluates
+everything up to a fixed cutoff, so re-running later gives the same result. Don't change the rule or
+the T0 after the start.
 
 ### Data and tests
 

@@ -226,8 +226,21 @@ async def run_lab(
             )
     if not runs:
         raise ValueError("nenhum candle carregado")
+    return assess(config, runs=runs, trades=trades, timing_runs=timing_runs,
+                  period_start=min(starts), period_end=max(ends))
 
-    period_start, period_end = min(starts), max(ends)
+
+def assess(
+    config: LabConfig,
+    *,
+    runs: list[RunSummary],
+    trades: list[BacktestTrade],
+    timing_runs: list[tuple[list[Candle], list[BacktestTrade]]],
+    period_start: datetime,
+    period_end: datetime,
+) -> LabReport:
+    """Estatística, walk-forward, timing contra o acaso e gate sobre trades já
+    simulados (laboratório e avaliação do modo sombra)."""
     overall = summarize(trades)
     ci = bootstrap_mean_ci([t.return_pct for t in trades], seed=config.seed)
     folds = walk_forward(trades, start=period_start, end=period_end, folds=config.folds)
