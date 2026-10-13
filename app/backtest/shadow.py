@@ -15,7 +15,7 @@ entrada acontece antes do T0.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.backtest.engine import BacktestEngine
 from app.backtest.lab import LabConfig, build_strategy, engine_config
 from app.backtest.regime import RegimeParams, classify_regimes
+from app.backtest.registry import DeclaredHypothesis
 from app.backtest.types import BacktestTrade
 from app.core.enums import MarketType
 from app.domain.models.market import Candle
@@ -69,6 +70,29 @@ class ShadowSpec(BaseModel):
     def history_days(self, interval: str, now: datetime) -> float:
         """Dias a carregar até `now` para cobrir o histórico inteiro (+1 de folga)."""
         return (now - self.history_start(interval)).total_seconds() / 86_400 + 1
+
+
+def spec_from_registry(hypothesis: str, declared: list[DeclaredHypothesis]) -> ShadowSpec | None:
+    """Spec do modo sombra a partir do registro de hipóteses.
+
+    None se a hipótese ainda não foi registrada (o serviço espera). O T0
+    precisa ser posterior ao registro: um início no passado deixaria escolher
+    o começo olhando o resultado."""
+    entry = next((e for e in declared if e.id == hypothesis), None)
+    if entry is None or entry.shadow_start is None:
+        return None
+    start = datetime.fromisoformat(entry.shadow_start)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    registered = datetime.fromisoformat(entry.date).replace(tzinfo=UTC)
+    if start < registered:
+        raise ValueError(
+            f"{hypothesis}: início do modo sombra ({entry.shadow_start}) antes do registro ({entry.date})"
+        )
+    lab = l6_lab_config()
+    if entry.strategy != lab.strategy or entry.params != lab.params:
+        raise ValueError(f"{hypothesis}: estratégia/parâmetros diferentes da configuração L6")
+    return ShadowSpec(hypothesis=hypothesis, start=start, lab=lab)
 
 
 class ShadowRun(BaseModel):

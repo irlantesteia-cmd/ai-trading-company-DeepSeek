@@ -5,6 +5,7 @@ from app.database.models.market_metric import MarketMetricORM
 from app.database.models.order import OrderFillORM, OrderORM
 from app.database.models.position import FuturesPositionSnapshotORM
 from app.database.models.reconciliation_run import ReconciliationRunORM
+from app.database.models.shadow_run import ShadowRunORM
 from app.database.models.shadow_trade import ShadowTradeORM
 from app.database.models.signal import SignalORM
 from app.database.models.trade import TradeORM
@@ -18,6 +19,7 @@ __all__ = [
     "OrderFillORM",
     "OrderORM",
     "ReconciliationRunORM",
+    "ShadowRunORM",
     "ShadowTradeORM",
     "SignalORM",
     "TradeORM",
