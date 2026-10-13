@@ -104,6 +104,11 @@ class ShadowRun(BaseModel):
     last_close: Decimal | None
     entries_skipped_vol: int
     trades: list[BacktestTrade]
+    # Métricas da curva de capital simulada (plana antes do T0).
+    max_drawdown_pct: float = 0.0
+    total_return_pct: float = 0.0
+    exposure_pct: float = 0.0
+    max_dd_duration_days: float = 0.0
 
 
 def run_shadow(
@@ -142,6 +147,10 @@ def run_shadow(
         last_close=window[-1].close,
         entries_skipped_vol=int(result.metrics.get("entries_skipped_vol", 0)),
         trades=result.trades,
+        max_drawdown_pct=result.metrics.get("max_drawdown_pct", 0.0),
+        total_return_pct=result.total_return_pct,
+        exposure_pct=result.metrics.get("exposure_pct", 0.0),
+        max_dd_duration_days=result.metrics.get("max_dd_duration_days", 0.0),
     )
 
 

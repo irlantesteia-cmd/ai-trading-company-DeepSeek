@@ -61,11 +61,11 @@ class ShadowStore(Protocol):
     async def record_cycle(self, cycle: ShadowCycle) -> None: ...
 
 
-async def _default_loader(symbol: str, interval: str, days: float) -> list[Candle]:
+async def default_loader(symbol: str, interval: str, days: float) -> list[Candle]:
     return await load_candles(symbol, interval, days=days)
 
 
-async def _default_funding_loader(symbol: str, days: float) -> list[tuple[int, float]]:
+async def default_funding_loader(symbol: str, days: float) -> list[tuple[int, float]]:
     return await load_funding(symbol, days=days)
 
 
@@ -82,8 +82,8 @@ class ShadowRunner:
         self.hypothesis = hypothesis
         self.registry_path = registry_path
         self._store = store
-        self._load = loader or _default_loader
-        self._load_funding = funding_loader or _default_funding_loader
+        self._load = loader or default_loader
+        self._load_funding = funding_loader or default_funding_loader
 
     async def run_once(self, now: datetime | None = None) -> ShadowCycle:
         now = now or datetime.now(UTC)

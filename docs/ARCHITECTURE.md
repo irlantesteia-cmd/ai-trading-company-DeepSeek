@@ -118,6 +118,24 @@ grava os trades hipotéticos. Sem a hipótese registrada com `shadow_start`, ele
 grava o ciclo como `NOT_REGISTERED` e não simula nada: o teste só começa com
 pré-registro. Ligado e esquecido; volta sozinho depois de reiniciar o Docker.
 
+O teste registrado é o `L6-shadow`, com início em **15/10/2026 00:00 UTC**. A
+regra de parada também foi registrada antes do início:
+
+| Estágio | Quando | O que vale |
+|---|---|---|
+| Coletando | Menos de 100 trades fechados | Só a contagem. |
+| Olhada intermediária | 100 trades fechados | Estatística dos 100 primeiros, **só informativa**: não aprova nem encerra. |
+| Final | 300 trades fechados ou 12 meses desde o início (o que vier primeiro) | Mesmo gate do laboratório, sem correção de Bonferroni (um teste confirmatório). Em 12 meses sem 300 trades, não é aprovada. |
+
+Cada estágio tem um corte fixo (a saída do 100º ou do 300º trade, ou o início
+mais 12 meses), então rodar o relatório mais tarde dá o mesmo resultado:
+
+```powershell
+.\.venv\Scripts\python scripts/shadow_report.py   # estágio + relatório em artifacts/shadow/
+```
+
+O veredito final entra no registro de hipóteses por PR.
+
 ### Travas
 
 ```powershell
@@ -222,6 +240,9 @@ servem só para medir sensibilidade.
 | 2026-10-10 | **Momentum intradiário** (5m, 15m, 1h) | Reprovada: ganho bruto ≈ 0; o custo (≈ 0,14% por trade) vira prejuízo. |
 | 2026-10-11 | **Rompimento de tendência** (Donchian, 4h e 1d, 12 ativos, desde 2021) | Reprovada: bruto +0,33% por trade, mas concentrado em um ano (nov/2024 a out/2025); drawdown 27%. |
 | 2026-10-11 | **Momentum entre ativos** (compra os 3 mais fortes, vende os 3 mais fracos, semanal) | Reprovada: o lado vendido perde, o último ano é negativo e o drawdown chega a 46%. |
+| 2026-10-12 | **Reversão à média** (15m, 1h, 4h, 12 ativos) | Reprovada: bruto ≈ 0 em todos os regimes. |
+| 2026-10-13 | **Tendência com filtro de volatilidade** (rompimento sem entrada em volatilidade alta; 2020–2021, fora da amostra) | Reprovada só no teste contra o acaso (p = 0,055; 0,274 corrigido). Passou os outros 5 critérios (+1,05% líquido por trade) e o efeito do filtro se repetiu fora da amostra, mas num período de alta forte. |
+| desde 2026-10-15 | **Mesma estratégia, para a frente** (`L6-shadow`, modo sombra, sem ordens) | Em teste: decisão nos 300 primeiros trades ou em 12 meses. |
 
 Os relatórios completos ficam em `artifacts/lab/` (fora do git). Os testes com
 12 ativos usam moedas listadas hoje (viés de sobrevivência), o que tende a
