@@ -49,6 +49,7 @@ from app.runtime.boot_cleanup import (
     close_all_futures_positions_on_boot,
 )
 from app.runtime.change_generator import HeuristicChangeGenerator
+from app.runtime.equity_recorder import record_equity_snapshot
 from app.runtime.evolution import EvolutionLoop
 from app.runtime.halt_guard import HaltGuard
 from app.runtime.heartbeat import HeartbeatMonitor
@@ -342,6 +343,8 @@ async def main() -> None:
         )
         while True:
             await monitor.run_once()
+            # Curva de capital para o limite de drawdown (Fase 5c).
+            await record_equity_snapshot(exchange, AsyncSessionLocal)
             await asyncio.sleep(settings.reconcile_interval_s)
 
     async def backfill_task() -> None:

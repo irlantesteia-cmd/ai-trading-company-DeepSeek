@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     # Margem exigida = notional da posição / alavancagem × folga; o saldo livre
     # precisa cobrir. 0 desliga a checagem.
     risk_margin_buffer: float = 1.2
+    # Drawdown máximo a partir do pico do capital (saldo + não realizado), em %.
+    # Cria trava global, liberada só manualmente; depois do resume o pico
+    # recomeça. 0 desliga.
+    risk_max_drawdown_pct: float = 10.0
     risk_max_daily_loss: float = 1_000.0
     # % do equity; o limite efetivo é o menor entre este e o absoluto.
     risk_max_daily_loss_pct: float = 3.0
