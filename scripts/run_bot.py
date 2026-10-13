@@ -52,6 +52,7 @@ from app.runtime.change_generator import HeuristicChangeGenerator
 from app.runtime.evolution import EvolutionLoop
 from app.runtime.halt_guard import HaltGuard
 from app.runtime.heartbeat import HeartbeatMonitor
+from app.runtime.leverage import apply_leverage_on_boot
 from app.runtime.lifecycle import ApplicationLifecycle
 from app.runtime.metrics_collector import MetricsCollector
 from app.runtime.order_recorder import OrderRecorder, RecordingOrderProvider
@@ -220,6 +221,17 @@ async def main() -> None:
                 logger.exception("boot_cleanup.reconcile_failed")
 
     event_bus = EventBus()
+
+    # Alavancagem explícita em cada ativo operado (Fase 5b). Depois do event
+    # bus: uma falha cria trava do ativo e publica o alerta.
+    if settings.binance_api_key and settings.binance_api_secret and settings.risk_max_leverage > 0:
+        await apply_leverage_on_boot(
+            exchange,
+            list(settings.trading_symbols),
+            settings.risk_max_leverage,
+            guard=HaltGuard(session_factory=AsyncSessionLocal, event_bus=event_bus, created_by="boot"),
+        )
+
     registry = AgentRegistry()
     context = AgentContext(
         exchange=exchange,
