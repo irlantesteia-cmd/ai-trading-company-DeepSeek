@@ -111,7 +111,9 @@ max DD ≤ 20%, and — per-trade lab — random-timing placebo p ≤ 0.05 after
 hypotheses in `docs/research/hypotheses.json`; `benchmarks.py`, `registry.py`); `sweep.py` runs
 exploratory parameter grids (`--sweep`), and `--declared ID` appends an official verdict; `lab.py` + `scripts/strategy_lab.py` run strategy × symbols × intervals and write
 reports to `artifacts/lab/`. A strategy reaches the live bot only after passing the gate;
-`trend_breakout` is lab-only for now. Results so far: `momentum` rejected (≈0 gross edge),
+`trend_breakout` is lab-only for now. `shadow.py` (Phase 6) is the forward test: it replays a lab
+config from a fixed start date T0 on each new candle (same `engine_config`, `first_entry_time` = T0,
+fixed warm-up before it) and stores hypothetical trades in `shadow_trades` — no orders. Results so far: `momentum` rejected (≈0 gross edge),
 `trend_breakout` rejected (gross edge concentrated in one year).
 
 Portfolio strategies (`xs_momentum`, cross-sectional long/short on daily bars) run through

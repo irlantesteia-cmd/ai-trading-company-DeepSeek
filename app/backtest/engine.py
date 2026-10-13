@@ -89,11 +89,15 @@ class BacktestEngine:
         ruin_level = cfg.initial_capital * Decimal(str(cfg.ruin_equity_pct)) / 100
         ruined = False
         skipped_vol = 0
+        first_entry = cfg.first_entry_time
 
         for i, bar in enumerate(candles):
             # 1) Entra o sinal pendente na abertura desta barra (sem capital, não entra)
             if pending is not None and open_trade is None and equity <= ruin_level:
                 ruined = True
+                pending = None
+            if pending is not None and first_entry is not None and bar.open_time < first_entry:
+                # Aquecimento (modo sombra): sinal anterior ao início não entra.
                 pending = None
             if (
                 pending is not None

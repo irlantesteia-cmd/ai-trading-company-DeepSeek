@@ -37,6 +37,9 @@ class BacktestConfig(DomainModel):
     # Filtro de regime (L6): não abre posição quando a volatilidade na barra
     # do sinal está num destes rótulos (ex.: {"HIGH"}). Exige `regimes`.
     skip_entry_vol: frozenset[str] = frozenset()
+    # Modo sombra (Fase 6): nenhuma entrada em barra que abre antes deste
+    # instante; o histórico anterior só aquece indicadores e regimes.
+    first_entry_time: datetime | None = None
 
 
 class BacktestTrade(DomainModel):
