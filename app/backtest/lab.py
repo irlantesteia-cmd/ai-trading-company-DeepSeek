@@ -130,6 +130,25 @@ def build_strategy(name: str, params: dict[str, float]) -> Strategy:
     return cls(**kwargs)
 
 
+def engine_config(config: LabConfig) -> BacktestConfig:
+    """Regras de simulação do laboratório (também usadas pelo modo sombra)."""
+    return BacktestConfig(
+        initial_capital=Decimal(str(config.initial_capital)),
+        risk_per_trade_pct=config.risk_per_trade_pct,
+        entry_fee_bps=config.entry_fee_bps,
+        exit_fee_bps=config.exit_fee_bps,
+        slippage_bps=config.slippage_bps,
+        max_holding_bars=config.hold_bars,
+        trailing_stop=config.trailing_stop,
+        skip_entry_vol=frozenset(config.skip_vol),
+        max_position_notional=(
+            Decimal(str(config.max_position_notional))
+            if config.max_position_notional is not None
+            else None
+        ),
+    )
+
+
 async def _default_loader(symbol: str, interval: str, days: float) -> list[Candle]:
     return await load_candles(symbol, interval, days=days)
 
@@ -161,23 +180,7 @@ async def run_lab(
     load = loader or default_load
     load_fund = funding_loader or default_fund
     funding_cache: dict[str, list[tuple[int, float]]] = {}
-    engine = BacktestEngine(
-        BacktestConfig(
-            initial_capital=Decimal(str(config.initial_capital)),
-            risk_per_trade_pct=config.risk_per_trade_pct,
-            entry_fee_bps=config.entry_fee_bps,
-            exit_fee_bps=config.exit_fee_bps,
-            slippage_bps=config.slippage_bps,
-            max_holding_bars=config.hold_bars,
-            trailing_stop=config.trailing_stop,
-            skip_entry_vol=frozenset(config.skip_vol),
-            max_position_notional=(
-                Decimal(str(config.max_position_notional))
-                if config.max_position_notional is not None
-                else None
-            ),
-        )
-    )
+    engine = BacktestEngine(engine_config(config))
     runs: list[RunSummary] = []
     trades: list[BacktestTrade] = []
     timing_runs: list[tuple[list[Candle], list[BacktestTrade]]] = []

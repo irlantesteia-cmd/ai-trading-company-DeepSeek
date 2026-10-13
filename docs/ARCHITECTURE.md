@@ -154,6 +154,7 @@ Banco Postgres (migrações em `migrations/versions/`):
 | `equity_snapshots` | Foto do capital (saldo, não realizado e soma) a cada reconciliação: a curva do limite de drawdown. |
 | `trading_halts` | Travas ativas e o histórico de quem liberou e com qual nota. |
 | `market_metrics` | Coletor (fora do bot): open interest, long/short, volume taker, funding e livro de ofertas por ativo, a cada 5 min. Base para pesquisar estratégias com esses dados. |
+| `shadow_trades` | Modo sombra (Fase 6, fora do bot): trades hipotéticos de uma estratégia do laboratório em dados novos, sem ordens. Uma linha por entrada; a posição aberta (`OPEN`) é atualizada até fechar. |
 | `candles`, `trading_pairs`, `futures_position_snapshots` | Dados de mercado, cadastro de pares e fotos de posições. |
 
 O Grafana lê o banco com um usuário só de leitura (`grafana_ro`). Seções do
