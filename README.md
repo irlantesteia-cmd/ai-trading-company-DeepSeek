@@ -143,6 +143,17 @@ python scripts/strategy_lab.py --strategy momentum --intervals 5m,15m,1h --days 
 python scripts/strategy_lab.py --strategy momentum --fee maker --param stop_atr_mult=2
 ```
 
+Todo veredito traz **benchmarks** (não operar, comprar e segurar e timing
+aleatório com o mesmo lado e duração) e o gate exige vencer o acaso, com o
+p-valor corrigido pelo número de hipóteses já declaradas
+(`docs/research/hypotheses.json`). Sensibilidade a parâmetros e registro de
+uma hipótese oficial:
+
+```powershell
+python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 --trailing-stop --funding --sweep channel_period=15,20,30 --sweep stop_atr_mult=2.5,3,3.5
+python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 --trailing-stop --funding --declared L6-minha-hipotese
+```
+
 ### Scripts auxiliares
 
 - `scripts/diagnose_binance_auth.py` — valida formato das credenciais sem vazar segredos

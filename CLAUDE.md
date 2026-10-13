@@ -107,7 +107,9 @@ bar's open with SL/TP anchored to the fill, stop beats target on the same bar, o
 trailing stop, real funding (long pays / short receives), notional cap, and ruin below 1% equity.
 `regime.py` labels bars causally; `stats.py` does bootstrap CIs and walk-forward folds;
 `gate.py` is the promotion gate (≥300 trades, CI95 lower bound > 0, ≥4/5 positive folds, PF > 1.1,
-max DD ≤ 20%); `lab.py` + `scripts/strategy_lab.py` run strategy × symbols × intervals and write
+max DD ≤ 20%, and — per-trade lab — random-timing placebo p ≤ 0.05 after Bonferroni over the declared
+hypotheses in `docs/research/hypotheses.json`; `benchmarks.py`, `registry.py`); `sweep.py` runs
+exploratory parameter grids (`--sweep`), and `--declared ID` appends an official verdict; `lab.py` + `scripts/strategy_lab.py` run strategy × symbols × intervals and write
 reports to `artifacts/lab/`. A strategy reaches the live bot only after passing the gate;
 `trend_breakout` is lab-only for now. Results so far: `momentum` rejected (≈0 gross edge),
 `trend_breakout` rejected (gross edge concentrated in one year).
