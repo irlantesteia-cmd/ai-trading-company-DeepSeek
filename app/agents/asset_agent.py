@@ -15,6 +15,8 @@ from app.domain.models.market import Candle
 from app.domain.models.signal import Signal
 from app.domain.models.strategy_context import StrategyContext
 from app.events.event import CandleClosed, Event, SignalGenerated
+from app.market.validation import window_problem
+from app.runtime.halt_guard import RULE_MARKET_DATA, ConsecutiveFailures, HaltGuard
 from app.strategies.base import Strategy
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,35 @@ class AssetAgent(BaseAgent):
         self.lookback = lookback
         self.ref_symbol = ref_symbol
         self.name = f"asset::{symbol}"
+        # Fase 5d: janelas inválidas seguidas → trava `market_data` do ativo.
+        self._invalid_data = ConsecutiveFailures(context.settings.halt_market_data_runs)
+        self._guard = HaltGuard(
+            session_factory=context.session_factory,
+            event_bus=context.event_bus,
+            created_by=self.name,
+        )
+
+    async def _data_ok(self, symbol: str, candles: list[Candle]) -> bool:
+        """Sem janela coerente, não há sinal; repetido, trava o ativo."""
+        problem = window_problem(
+            candles, self.interval, max_gap_bars=self.context.settings.market_data_max_gap_bars
+        )
+        if problem is None:
+            return True
+        logger.warning(
+            "asset.invalid_market_data",
+            extra={"symbol": self.symbol, "data_symbol": symbol, "problem": problem},
+        )
+        if self._invalid_data.failure():
+            await self._guard.trip(
+                rule=RULE_MARKET_DATA,
+                reason=(
+                    f"{self._invalid_data.count} janelas de candles inválidas seguidas "
+                    f"({symbol}): {problem}"
+                ),
+                symbol=self.symbol,
+            )
+        return False
 
     # ------------------------------------------------------------- análise
     async def analyze(self) -> Signal | None:
@@ -56,6 +87,8 @@ class AssetAgent(BaseAgent):
             return None
         candles = await self._fetch_candles()
         if len(candles) < self.strategy.warmup:
+            return None
+        if not await self._data_ok(self.symbol, candles):
             return None
 
         ref_candles: dict[str, list[Candle]] = {}
@@ -74,7 +107,10 @@ class AssetAgent(BaseAgent):
                     extra={"symbol": self.symbol, "ref_symbol": self.ref_symbol},
                 )
                 return None
+            if not await self._data_ok(self.ref_symbol, ref):
+                return None
             ref_candles[self.ref_symbol] = ref
+        self._invalid_data.success()
 
         ctx = StrategyContext(
             symbol=self.symbol,
