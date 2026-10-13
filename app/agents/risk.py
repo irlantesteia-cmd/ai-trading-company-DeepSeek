@@ -24,6 +24,7 @@ def _limits_from_settings(settings) -> RiskLimits:
         max_total_notional=Decimal(str(settings.risk_max_total_notional)),
         max_total_exposure_x=Decimal(str(settings.risk_max_total_exposure_x)),
         margin_buffer=Decimal(str(settings.risk_margin_buffer)),
+        max_drawdown_pct=Decimal(str(settings.risk_max_drawdown_pct)),
         max_leverage=settings.risk_max_leverage,
         max_daily_loss=Decimal(str(settings.risk_max_daily_loss)),
         max_daily_loss_pct=Decimal(str(settings.risk_max_daily_loss_pct)),

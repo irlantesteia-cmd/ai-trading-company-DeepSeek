@@ -17,8 +17,9 @@ RULE_DAILY_LOSS = "daily_loss"
 RULE_CONSECUTIVE_LOSSES = "consecutive_losses"
 RULE_TOTAL_EXPOSURE = "total_exposure"
 RULE_MARGIN = "margin"
+RULE_MAX_DRAWDOWN = "max_drawdown"
 # Rejeições que viram trava global persistente (liberação só manual).
-AUTO_HALT_RULES = frozenset({RULE_DAILY_LOSS, RULE_CONSECUTIVE_LOSSES})
+AUTO_HALT_RULES = frozenset({RULE_DAILY_LOSS, RULE_CONSECUTIVE_LOSSES, RULE_MAX_DRAWDOWN})
 
 
 class RiskEngine:
@@ -29,6 +30,7 @@ class RiskEngine:
         1. confidence >= min_confidence
         2. daily_pnl > -(menor entre max_daily_loss e max_daily_loss_pct do equity)
         3. consecutive_losses < max_consecutive_losses
+           e queda a partir do pico do capital < max_drawdown_pct
         4. exposição total + uma posição cheia <= max_total_notional (absoluto)
            e <= max_total_exposure_x × equity (relativo ao capital)
         5. open_positions_count < max_open_positions
@@ -81,6 +83,15 @@ class RiskEngine:
                 f"max_consecutive_losses={limits.max_consecutive_losses} atingido "
                 f"(atual={state.consecutive_losses})",
                 RULE_CONSECUTIVE_LOSSES,
+            )
+
+        if limits.max_drawdown_pct > 0 and state.drawdown_pct >= limits.max_drawdown_pct:
+            return self._reject(
+                signal,
+                f"drawdown de {state.drawdown_pct:.2f}% a partir do pico "
+                f"({state.peak_equity:.2f} → {state.total_equity:.2f}) >= "
+                f"{limits.max_drawdown_pct}%",
+                RULE_MAX_DRAWDOWN,
             )
 
         projected = state.total_notional + limits.max_position_notional_per_symbol

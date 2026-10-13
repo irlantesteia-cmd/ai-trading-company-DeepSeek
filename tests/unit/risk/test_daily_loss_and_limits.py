@@ -100,6 +100,9 @@ class _Result:
     def scalar_one(self):
         return self._scalar
 
+    def scalar_one_or_none(self):
+        return self._scalar
+
     def scalars(self):
         return self
 
@@ -108,9 +111,10 @@ class _Result:
 
 
 class _Session:
-    def __init__(self, realized, recent) -> None:
-        # realizado do dia, perdas recentes, travas ativas
-        self._results = [_Result(scalar=realized), _Result(rows=recent), _Result(rows=[])]
+    def __init__(self, realized, recent, peak=None) -> None:
+        # realizado do dia, perdas recentes, travas ativas, pico do capital
+        self._results = [_Result(scalar=realized), _Result(rows=recent), _Result(rows=[]),
+                         _Result(scalar=peak)]
         self.statements: list = []
 
     async def __aenter__(self):

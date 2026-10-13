@@ -73,7 +73,7 @@ Da mais próxima da ordem para a mais ampla. Toda configuração fica no `.env`
 | 4 | **Stop que falha** | Se o stop-loss não puder ser criado, a posição é fechada a mercado na hora. | `CLOSE_ON_STOP_LOSS_FAILURE` |
 | 5 | **Saída por tempo** | Fecha posições abertas há mais de N minutos. | `POSITION_MAX_HOLDING_MINUTES` |
 | 6 | **Candles atrasados** | Candle que chega atrasado (volta de suspensão, boot) não gera sinal. | `CANDLE_MAX_EMIT_LAG_S` |
-| 7 | **Travas por perda** (R2) | Perda diária ou perdas seguidas criam trava global. | `RISK_MAX_DAILY_LOSS(_PCT)`, `RISK_MAX_CONSECUTIVE_LOSSES` |
+| 7 | **Travas por perda** (R2, Fase 5) | Perda diária, perdas seguidas ou queda de 10% a partir do pico do capital criam trava global. | `RISK_MAX_DAILY_LOSS(_PCT)`, `RISK_MAX_CONSECUTIVE_LOSSES`, `RISK_MAX_DRAWDOWN_PCT` |
 | 8 | **Travas operacionais** (R3) | Falhas de reconciliação, de API ou de proteção criam trava. | `HALT_*` |
 | 9 | **Limpeza no boot** | Opcionalmente fecha posições e cancela SL/TP órfãos ao iniciar. | `CLOSE_POSITIONS_ON_BOOT`, `CANCEL_PROTECTIVE_ORDERS_ON_CLOSE` |
 
@@ -127,6 +127,7 @@ motivo) e pelo painel **Trava de trading** no Grafana.
 | `manual` | Alguém pausou. | A nota da pausa. | Quando o motivo da pausa acabar. |
 | `daily_loss` | O P&L do dia (realizado desde 00:00 UTC + não realizado) passou do limite. | Painel de resultado e os últimos round trips: perdas normais da estratégia ou algo anormal (slippage, ordem duplicada)? | Depois de 00:00 UTC. Antes disso o P&L do dia continua abaixo do limite e o próximo sinal cria a trava de novo. |
 | `consecutive_losses` | N operações seguidas fecharam no prejuízo. | Se as perdas vieram de stops normais ou de algum erro; se o mercado mudou de regime. | Depois de revisar. O `resume` zera a contagem: só contam as perdas fechadas depois da última liberação. Se as próximas N operações também perderem, trava de novo. |
+| `max_drawdown` | O capital (saldo + não realizado) caiu 10% abaixo do maior valor desde a última liberação desta trava. | Grafana (resultado e P&L acumulado) e `equity_snapshots`: perdas normais acumuladas ou algo anormal? | Depois de revisar a estratégia. O `resume` recomeça o pico do valor atual; se cair mais 10% a partir dali, trava de novo. |
 | `reconciliation` | Ordens no banco e na corretora não batem há 2 rodadas (≈ 10 min). | Tabela "Reconciliações com divergência não resolvida" no Grafana; as ordens abertas no site da Binance Demo. | Quando a divergência for explicada (ordem criada à mão, ordem antiga) e a reconciliação seguinte vier equilibrada. |
 | `reconciliation_error` | A reconciliação não conseguiu rodar 3 vezes seguidas. | Log do bot (`reconcile.failed`): internet, Binance fora, Postgres parado (`docker compose ps`). | Quando a causa for resolvida e o painel "Minutos desde a última reconciliação" voltar a zerar. |
 | `api_auth` | A Binance rejeitou a chave da API. | Rode `scripts/diagnose_binance_auth.py` (não mostra a chave). A chave pode ter sido revogada, expirada ou perdido permissão. | Depois de corrigir a chave no `.env` e reiniciar o bot. |
@@ -149,6 +150,7 @@ Banco Postgres (migrações em `migrations/versions/`):
 | `trades` | Cada fill gravado a partir dos eventos de execução. |
 | `round_trips` | Operação completa (entrada até saída), com P&L, taxas e motivo de fechamento (stop, alvo, tempo, manual). |
 | `reconciliation_runs` | Cada reconciliação: ordens abertas dos dois lados, divergências e se ficou equilibrada. |
+| `equity_snapshots` | Foto do capital (saldo, não realizado e soma) a cada reconciliação: a curva do limite de drawdown. |
 | `trading_halts` | Travas ativas e o histórico de quem liberou e com qual nota. |
 | `market_metrics` | Coletor (fora do bot): open interest, long/short, volume taker, funding e livro de ofertas por ativo, a cada 5 min. Base para pesquisar estratégias com esses dados. |
 | `candles`, `trading_pairs`, `futures_position_snapshots` | Dados de mercado, cadastro de pares e fotos de posições. |
