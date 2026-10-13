@@ -127,7 +127,7 @@ class _Session:
 def _exchange(positions, total="3000"):
     ex = MagicMock()
     ex.account.get_futures_positions = AsyncMock(return_value=positions)
-    ex.account.get_futures_balance = AsyncMock(return_value=MagicMock(total=Decimal(total)))
+    ex.account.get_futures_balance = AsyncMock(return_value=MagicMock(total=Decimal(total), free=Decimal(total)))
     return ex
 
 

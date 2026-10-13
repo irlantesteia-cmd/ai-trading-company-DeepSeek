@@ -19,6 +19,8 @@ class PortfolioState(DomainModel):
     """Snapshot do portfólio usado pelo motor de risco e pelo dimensionador."""
 
     equity: Decimal
+    # Saldo livre para margem nova (`availableBalance`); None = desconhecido.
+    available_balance: Decimal | None = None
     # P&L do dia (00:00 UTC): realizado (round trips fechados) + não realizado
     # (posições abertas). É o que o limite de perda diária avalia.
     daily_pnl: Decimal
