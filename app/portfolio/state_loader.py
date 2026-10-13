@@ -63,6 +63,7 @@ async def load_portfolio_state(
 
     return PortfolioState(
         equity=balance.total,
+        available_balance=balance.free,
         daily_pnl=realized_today + unrealized,
         positions=positions,
         consecutive_losses=consecutive_losses,

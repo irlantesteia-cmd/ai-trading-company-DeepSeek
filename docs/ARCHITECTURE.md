@@ -66,7 +66,7 @@ Da mais próxima da ordem para a mais ampla. Toda configuração fica no `.env`
 
 | # | Camada | O que faz | Configuração |
 |---|---|---|---|
-| 1 | **Regras de risco por sinal** | Rejeita o sinal, na ordem: trava ativa → confiança mínima → perda diária → perdas seguidas → exposição total → máx. posições → máx. na mesma direção → já há posição no ativo → grupo correlacionado. | `RISK_*` |
+| 1 | **Regras de risco por sinal** | Rejeita o sinal, na ordem: trava ativa → confiança mínima → perda diária → perdas seguidas → exposição total (teto absoluto e até 2× o capital) → máx. posições → máx. na mesma direção → já há posição no ativo → grupo correlacionado → saldo livre cobre a margem (notional ÷ alavancagem × 1,2). | `RISK_*` (`RISK_MAX_TOTAL_EXPOSURE_X`, `RISK_MARGIN_BUFFER`) |
 | 2 | **Tamanho da posição** | Arrisca uma fração do capital até o stop, limitada por um notional máximo por ativo. | `SIZING_RISK_PER_TRADE_PCT`, `RISK_MAX_POSITION_NOTIONAL` |
 | 3 | **SL/TP na corretora** | Criados logo após o fill, **ancorados no preço executado** (não no preço do sinal). | `STOP_LOSS_ENABLED`, `TAKE_PROFIT_ENABLED` |
 | 4 | **Stop que falha** | Se o stop-loss não puder ser criado, a posição é fechada a mercado na hora. | `CLOSE_ON_STOP_LOSS_FAILURE` |

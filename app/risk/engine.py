@@ -15,6 +15,8 @@ RULE_HALTED = "halted"
 RULE_CONFIDENCE = "confidence"
 RULE_DAILY_LOSS = "daily_loss"
 RULE_CONSECUTIVE_LOSSES = "consecutive_losses"
+RULE_TOTAL_EXPOSURE = "total_exposure"
+RULE_MARGIN = "margin"
 # Rejeições que viram trava global persistente (liberação só manual).
 AUTO_HALT_RULES = frozenset({RULE_DAILY_LOSS, RULE_CONSECUTIVE_LOSSES})
 
@@ -27,11 +29,14 @@ class RiskEngine:
         1. confidence >= min_confidence
         2. daily_pnl > -(menor entre max_daily_loss e max_daily_loss_pct do equity)
         3. consecutive_losses < max_consecutive_losses
-        4. exposição total + uma posição cheia <= max_total_notional
+        4. exposição total + uma posição cheia <= max_total_notional (absoluto)
+           e <= max_total_exposure_x × equity (relativo ao capital)
         5. open_positions_count < max_open_positions
         6. nenhuma direção com `max_same_direction` posições abertas
         7. não há posição já aberta no mesmo símbolo
         8. nenhum símbolo correlacionado já tem posição
+        9. saldo livre cobre a margem de uma posição cheia (notional /
+           alavancagem × folga)
     """
 
     def __init__(self, limits: RiskLimits) -> None:
@@ -88,6 +93,17 @@ class RiskEngine:
                 "total_notional",
             )
 
+        if limits.max_total_exposure_x > 0 and state.equity > 0:
+            exposure_cap = state.equity * limits.max_total_exposure_x
+            if projected > exposure_cap:
+                return self._reject(
+                    signal,
+                    f"exposição total excederia {limits.max_total_exposure_x}× o equity: "
+                    f"atual={state.total_notional:.2f} + nova posição até "
+                    f"{limits.max_position_notional_per_symbol} > {exposure_cap:.2f}",
+                    RULE_TOTAL_EXPOSURE,
+                )
+
         if state.open_positions_count >= limits.max_open_positions:
             return self._reject(
                 signal,
@@ -121,6 +137,18 @@ class RiskEngine:
                     f"correlação (grupo '{group_name}'): já há posição em "
                     f"{sorted(conflicting)}",
                     "correlation",
+                )
+
+        if limits.margin_buffer > 0 and state.available_balance is not None:
+            leverage = Decimal(max(1, limits.max_leverage))
+            required = limits.max_position_notional_per_symbol / leverage * limits.margin_buffer
+            if state.available_balance < required:
+                return self._reject(
+                    signal,
+                    f"margem insuficiente: livre={state.available_balance:.2f} < "
+                    f"{required:.2f} (posição até {limits.max_position_notional_per_symbol} "
+                    f"/ {leverage}× × {limits.margin_buffer})",
+                    RULE_MARGIN,
                 )
 
         return RiskDecision(
