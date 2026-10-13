@@ -97,6 +97,32 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Modo sombra (Fase 6): teste para a frente da estratégia L6, sem ordens e
+  # sem chave (não recebe o .env). Lê o T0 do registro de hipóteses montado
+  # do repositório (só leitura); sem registro, só avisa e espera. As velas
+  # ficam em cache no volume shadow_cache. Rode `alembic upgrade head` antes.
+  #   docker compose up -d --build shadow
+  shadow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["python", "scripts/run_shadow.py"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/ai_trading?ssl=disable
+    volumes:
+      - ./docs/research:/app/docs/research:ro
+      - shadow_cache:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres_data:
   grafana_data:
+  shadow_cache:

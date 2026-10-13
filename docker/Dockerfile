@@ -20,8 +20,8 @@ COPY migrations/ migrations/
 COPY alembic.ini ./
 RUN pip install --no-deps . \
     && useradd --create-home --uid 1000 bot \
-    && mkdir -p /app/models \
-    && chown -R bot:bot /app/models
+    && mkdir -p /app/models /app/data \
+    && chown -R bot:bot /app/models /app/data
 
 USER bot
 

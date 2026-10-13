@@ -39,6 +39,15 @@ class DeclaredHypothesis(BaseModel):
     timing_p: float | None = None      # p do timing aleatório (sem correção)
     report: str | None = None          # relatório em artifacts/lab
     notes: str = ""
+    # Modo sombra (Fase 6): início do teste para a frente (ISO 8601, UTC).
+    # Registrado ANTES de o teste começar; o serviço só roda com ele.
+    shadow_start: str | None = None
+
+    def dump(self) -> dict[str, Any]:
+        data = self.model_dump()
+        if data["shadow_start"] is None:
+            del data["shadow_start"]  # entradas do laboratório ficam como eram
+        return data
 
 
 def load_declared(path: Path = DECLARED_PATH) -> list[DeclaredHypothesis]:
@@ -55,7 +64,7 @@ def append_declared(entry: DeclaredHypothesis, path: Path = DECLARED_PATH) -> in
     entries.append(entry)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps([e.model_dump() for e in entries], ensure_ascii=False, indent=2) + "\n",
+        json.dumps([e.dump() for e in entries], ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
         newline="\n",  # arquivo versionado: LF também no Windows
     )

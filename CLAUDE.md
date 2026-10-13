@@ -135,6 +135,13 @@ positions plus a minimum number of periods.
 via a non-null-wins upsert) and backfills up to ~30 days on start, since Binance keeps no longer
 history. It is the data source for research on non-price signals.
 
+`scripts/run_shadow.py` (compose service `shadow`, same pattern: no `.env`, public data only) runs
+`app/backtest/shadow_runner.py` once per 4h candle: it reads the hypothesis `SHADOW_HYPOTHESIS`
+(default `L6-shadow`) and its `shadow_start` (T0) from `docs/research/hypotheses.json` (bind-mounted
+read-only), replays every symbol × interval with `run_shadow` and writes `shadow_trades` plus one
+`shadow_runs` row per cycle. Without a registered T0 it only records `NOT_REGISTERED`; a T0 earlier
+than the registration date is refused.
+
 ### Data and tests
 
 Postgres tables include `orders`, `order_fills`, `trades`, `round_trips`, `signals`, `candles`,

@@ -1018,6 +1018,286 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 34,
+      "type": "row",
+      "title": "Modo sombra (L6, sem ordens)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 106,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "Trades fechados",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 107,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Trades\" FROM shadow_trades WHERE hypothesis = 'L6-shadow' AND status = 'CLOSED'"
+        }
+      ],
+      "description": "Teste para a frente da estratégia L6 (tendência + filtro de volatilidade), SEM ordens: trades hipotéticos com as regras do laboratório desde o T0 registrado. A decisão só vale na regra de parada pré-registrada (300 trades ou 12 meses); não decida antes olhando este painel."
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "Líquido médio por trade",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 107,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT ROUND(AVG(return_pct), 3) AS \"%\" FROM shadow_trades WHERE hypothesis = 'L6-shadow' AND status = 'CLOSED'"
+        }
+      ],
+      "description": "Média do resultado líquido (taxas, derrapagem e funding) em % do notional de entrada.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 3
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "Posições abertas",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 107,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Abertas\" FROM shadow_trades WHERE hypothesis = 'L6-shadow' AND status = 'OPEN'"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "stat",
+      "title": "Horas desde o último ciclo",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 13,
+        "y": 107,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (now() - MAX(ran_at))) / 3600.0, 1) AS \"Horas\" FROM shadow_runs WHERE hypothesis = 'L6-shadow'"
+        }
+      ],
+      "description": "O serviço roda a cada vela de 4h. Acima de 5 h, o alerta dispara.",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 4.5
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 39,
+      "type": "table",
+      "title": "Último ciclo",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 107,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT status AS \"Status\", start AS \"T0\", streams_failed AS \"Falhas\", streams_stale AS \"Atrasados\", streams_short_warmup AS \"Aquec. curto\", error AS \"Erro\" FROM shadow_runs WHERE hypothesis = 'L6-shadow' ORDER BY ran_at DESC LIMIT 1"
+        }
+      ],
+      "description": "NOT_REGISTERED = hipótese ainda sem T0 no registro (o teste não começou)."
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Resultado acumulado (% somado por trade)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 111,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT exit_time AS time, SUM(return_pct) OVER (ORDER BY exit_time, id) AS \"Líquido acumulado %\" FROM shadow_trades WHERE hypothesis = 'L6-shadow' AND status = 'CLOSED' ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 41,
+      "type": "table",
+      "title": "Posições abertas (hipotéticas)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 111,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT symbol AS \"Ativo\", interval AS \"Intervalo\", direction AS \"Lado\", entry_time AS \"Entrada\", ROUND(entry_price, 6) AS \"Preço entrada\", ROUND(stop_price, 6) AS \"Stop móvel\", ROUND(mark_price, 6) AS \"Último preço\", ROUND(return_pct, 2) AS \"Resultado %\" FROM shadow_trades WHERE hypothesis = 'L6-shadow' AND status = 'OPEN' ORDER BY entry_time DESC"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "table",
+      "title": "Últimos 20 trades fechados",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pg-trading"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 119,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pg-trading"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT symbol AS \"Ativo\", interval AS \"Intervalo\", direction AS \"Lado\", entry_time AS \"Entrada\", exit_time AS \"Saída\", ROUND(return_pct, 2) AS \"Líquido %\", ROUND(gross_return_pct, 2) AS \"Bruto %\", ROUND(funding_pct, 3) AS \"Funding %\", bars_held AS \"Barras\", regime_vol AS \"Volatilidade\" FROM shadow_trades WHERE hypothesis = 'L6-shadow' AND status = 'CLOSED' ORDER BY exit_time DESC LIMIT 20"
+        }
+      ]
     }
   ]
 }

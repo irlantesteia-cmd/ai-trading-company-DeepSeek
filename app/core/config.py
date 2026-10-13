@@ -148,6 +148,14 @@ class Settings(BaseSettings):
     collector_backfill_days: float = 29.5  # a Binance guarda ~30 dias
     collector_base_url: str = "https://fapi.binance.com"
 
+    # Modo sombra (scripts/run_shadow.py, Fase 6): teste para a frente sem
+    # ordens. O início (T0) vem do registro de hipóteses, nunca daqui.
+    shadow_hypothesis: str = "L6-shadow"
+    shadow_registry_path: str = "docs/research/hypotheses.json"
+    # Ciclo alinhado às velas de 4h, alguns segundos depois do fechamento.
+    shadow_cycle_s: float = 14_400.0
+    shadow_offset_s: float = 90.0
+
     # Runtime
     heartbeat_max_age_s: float = 120.0
     heartbeat_interval_s: float = 30.0
