@@ -158,7 +158,10 @@ async def load_candles(
     cache: KlineCache | None = None,
     base_url: str = DEFAULT_BASE_URL,
 ) -> list[Candle]:
-    """Candles fechados dos últimos `days` dias, do mais antigo ao mais novo."""
+    """Candles fechados dos `days` dias anteriores a `now`, do mais antigo ao
+    mais novo. `now` no passado delimita um período histórico (fora da
+    amostra): nada fechado depois dele é devolvido, e o cache não perde os
+    candles mais novos que já tinha."""
     now = now or datetime.now(UTC)
     cache = cache or KlineCache()
     step = interval_ms(interval)
@@ -189,8 +192,11 @@ async def load_candles(
         if own_client:
             await http.aclose()
 
-    # Só candles fechados (close_time < agora) vão para o cache.
-    merged = [r for r in _merge(older, rows, newer) if int(r[6]) < now_ms]
+    # Só candles buscados agora e já fechados (close_time < now) entram no
+    # cache; os que já estavam lá foram validados ao gravar e ficam.
+    older = [r for r in older if int(r[6]) < now_ms]
+    newer = [r for r in newer if int(r[6]) < now_ms]
+    merged = _merge(older, rows, newer)
     if older or newer:
         cache.write(symbol, interval, merged)
         logger.info(
@@ -199,7 +205,7 @@ async def load_candles(
                    "fetched": len(older) + len(newer)},
         )
 
-    selected = [r for r in merged if int(r[0]) >= start_ms]
+    selected = [r for r in merged if int(r[0]) >= start_ms and int(r[6]) < now_ms]
     return [map_kline(r, MarketType.FUTURES, symbol, interval, now=now) for r in selected]
 
 
@@ -271,4 +277,4 @@ async def load_funding(
     merged = _merge(rows, fetched)
     if fetched:
         cache.write(symbol, "funding", merged)
-    return [(int(t), float(r)) for t, r in merged if int(t) >= start_ms]
+    return [(int(t), float(r)) for t, r in merged if start_ms <= int(t) <= now_ms]
