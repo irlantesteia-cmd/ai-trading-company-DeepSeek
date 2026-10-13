@@ -68,6 +68,7 @@ Da mais próxima da ordem para a mais ampla. Toda configuração fica no `.env`
 |---|---|---|---|
 | 1 | **Regras de risco por sinal** | Rejeita o sinal, na ordem: trava ativa → confiança mínima → perda diária → perdas seguidas → exposição total (teto absoluto e até 2× o capital) → máx. posições → máx. na mesma direção → já há posição no ativo → grupo correlacionado → saldo livre cobre a margem (notional ÷ alavancagem × 1,2). | `RISK_*` (`RISK_MAX_TOTAL_EXPOSURE_X`, `RISK_MARGIN_BUFFER`) |
 | 2 | **Tamanho da posição** | Arrisca uma fração do capital até o stop, limitada por um notional máximo por ativo. | `SIZING_RISK_PER_TRADE_PCT`, `RISK_MAX_POSITION_NOTIONAL` |
+| 2b | **Alavancagem explícita** | No boot, aplica `RISK_MAX_LEVERAGE` (3×) em cada ativo; se falhar, trava o ativo. | `RISK_MAX_LEVERAGE` |
 | 3 | **SL/TP na corretora** | Criados logo após o fill, **ancorados no preço executado** (não no preço do sinal). | `STOP_LOSS_ENABLED`, `TAKE_PROFIT_ENABLED` |
 | 4 | **Stop que falha** | Se o stop-loss não puder ser criado, a posição é fechada a mercado na hora. | `CLOSE_ON_STOP_LOSS_FAILURE` |
 | 5 | **Saída por tempo** | Fecha posições abertas há mais de N minutos. | `POSITION_MAX_HOLDING_MINUTES` |
@@ -132,6 +133,7 @@ motivo) e pelo painel **Trava de trading** no Grafana.
 | `api_errors` | 3 erros seguidos da corretora ao executar sinais. | Log (`trading_manager.signal_processing_skipped`) para ver o código do erro: margem insuficiente, quantidade mínima, instabilidade da Binance. | Quando a causa for entendida e corrigida. Um erro de margem pede revisão do tamanho das posições. |
 | `protection` (do ativo) | O stop-loss falhou e a posição foi zerada. | Log (`execution.flattening_after_stop_loss_failure`) e o código do erro da Binance. | Depois de entender o erro; trava só aquele ativo. |
 | `protection_failure` | O stop-loss falhou **e** o fechamento também. **Pode haver posição sem proteção.** | **Na hora:** a posição no site da Binance. Zere com `close_all_positions.py` ou à mão. Depois, o log. | Só depois de confirmar que não há posição desprotegida. |
+| `leverage` (do ativo) | No boot, a corretora recusou aplicar a alavancagem configurada (`RISK_MAX_LEVERAGE`) no ativo. | Log (`leverage.apply_failed`) e o código do erro da Binance; a alavancagem do ativo no site. | Depois de aplicar a alavancagem certa (reiniciar o bot tenta de novo) ou ajustar `RISK_MAX_LEVERAGE`. |
 | `unprotected_position` | Há posição aberta sem stop-loss ativo há 2 verificações (≈ 10 min). | **Na hora:** a posição e as ordens condicionais na Binance. Coloque o stop à mão ou zere a posição. | Depois que toda posição aberta tiver stop, ou não houver posição. |
 
 ---
