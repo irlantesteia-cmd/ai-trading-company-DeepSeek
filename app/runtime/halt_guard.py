@@ -29,6 +29,8 @@ RULE_API_ERRORS = "api_errors"
 RULE_PROTECTION = "protection"
 RULE_PROTECTION_FAILURE = "protection_failure"
 RULE_UNPROTECTED_POSITION = "unprotected_position"
+RULE_LEVERAGE = "leverage"
+RULE_MARKET_DATA = "market_data"
 
 
 class HaltGuard:

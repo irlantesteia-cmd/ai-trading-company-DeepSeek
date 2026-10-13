@@ -11,7 +11,9 @@ com `daily_pnl=0` fixo, então o limite de perda diária nunca disparava.
   liberação (`resume`) da trava `consecutive_losses`. Sem isso a contagem
   nunca zeraria: a trava impede a operação sem prejuízo que a zeraria, e o
   próximo sinal travaria de novo logo após o `resume`;
-- `active_halts`: travas de trading ativas (`trading_halts`).
+- `active_halts`: travas de trading ativas (`trading_halts`);
+- `peak_equity`: maior capital em `equity_snapshots` desde a última liberação
+  da trava `max_drawdown` (o resume recomeça o pico), e o capital de agora.
 
 Sem `session_factory` (testes, scripts), a parte do banco vale zero. Falha
 ao ler o banco **propaga**: sem saber a perda do dia, o sinal não deve ser
@@ -27,12 +29,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.enums import RoundTripStatus
+from app.database.models.equity_snapshot import EquitySnapshotORM
 from app.database.models.round_trip import RoundTripORM
 from app.database.models.trading_halt import TradingHaltORM
 from app.database.repositories.trading_halt import TradingHaltRepository
 from app.exchanges.base.exchange import Exchange
 from app.portfolio.state import HaltInfo, PortfolioState
-from app.risk.engine import RULE_CONSECUTIVE_LOSSES
+from app.risk.engine import RULE_CONSECUTIVE_LOSSES, RULE_MAX_DRAWDOWN
 
 # Janela para contar perdas seguidas: mais que qualquer limite razoável.
 _STREAK_LOOKBACK = 50
@@ -55,19 +58,43 @@ async def load_portfolio_state(
     realized_today = Decimal(0)
     consecutive_losses = 0
     halts: list[HaltInfo] = []
+    peak: Decimal | None = None
     if session_factory is not None:
         realized_today, consecutive_losses = await _realized_stats(
             session_factory, day_start_utc(now or datetime.now(UTC))
         )
         halts = await _active_halts(session_factory)
+        peak = await _peak_equity(session_factory)
+    current = balance.total + unrealized
+    if peak is not None:
+        peak = max(peak, current)
 
     return PortfolioState(
         equity=balance.total,
+        available_balance=balance.free,
         daily_pnl=realized_today + unrealized,
         positions=positions,
         consecutive_losses=consecutive_losses,
         active_halts=halts,
+        peak_equity=peak,
     )
+
+
+async def _peak_equity(session_factory: async_sessionmaker) -> Decimal | None:
+    reset_at = (
+        select(func.max(TradingHaltORM.cleared_at))
+        .where(
+            TradingHaltORM.rule == RULE_MAX_DRAWDOWN,
+            TradingHaltORM.cleared_at.is_not(None),
+        )
+        .scalar_subquery()
+    )
+    stmt = select(func.max(EquitySnapshotORM.total_equity)).where(
+        or_(reset_at.is_(None), EquitySnapshotORM.taken_at > reset_at)
+    )
+    async with session_factory() as session:
+        value = (await session.execute(stmt)).scalar_one_or_none()
+    return Decimal(str(value)) if value is not None else None
 
 
 async def _active_halts(session_factory: async_sessionmaker) -> list[HaltInfo]:

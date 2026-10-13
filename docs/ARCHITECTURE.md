@@ -66,13 +66,14 @@ Da mais próxima da ordem para a mais ampla. Toda configuração fica no `.env`
 
 | # | Camada | O que faz | Configuração |
 |---|---|---|---|
-| 1 | **Regras de risco por sinal** | Rejeita o sinal, na ordem: trava ativa → confiança mínima → perda diária → perdas seguidas → exposição total → máx. posições → máx. na mesma direção → já há posição no ativo → grupo correlacionado. | `RISK_*` |
+| 1 | **Regras de risco por sinal** | Rejeita o sinal, na ordem: trava ativa → confiança mínima → perda diária → perdas seguidas → exposição total (teto absoluto e até 2× o capital) → máx. posições → máx. na mesma direção → já há posição no ativo → grupo correlacionado → saldo livre cobre a margem (notional ÷ alavancagem × 1,2). | `RISK_*` (`RISK_MAX_TOTAL_EXPOSURE_X`, `RISK_MARGIN_BUFFER`) |
 | 2 | **Tamanho da posição** | Arrisca uma fração do capital até o stop, limitada por um notional máximo por ativo. | `SIZING_RISK_PER_TRADE_PCT`, `RISK_MAX_POSITION_NOTIONAL` |
+| 2b | **Alavancagem explícita** | No boot, aplica `RISK_MAX_LEVERAGE` (3×) em cada ativo; se falhar, trava o ativo. | `RISK_MAX_LEVERAGE` |
 | 3 | **SL/TP na corretora** | Criados logo após o fill, **ancorados no preço executado** (não no preço do sinal). | `STOP_LOSS_ENABLED`, `TAKE_PROFIT_ENABLED` |
 | 4 | **Stop que falha** | Se o stop-loss não puder ser criado, a posição é fechada a mercado na hora. | `CLOSE_ON_STOP_LOSS_FAILURE` |
 | 5 | **Saída por tempo** | Fecha posições abertas há mais de N minutos. | `POSITION_MAX_HOLDING_MINUTES` |
-| 6 | **Candles atrasados** | Candle que chega atrasado (volta de suspensão, boot) não gera sinal. | `CANDLE_MAX_EMIT_LAG_S` |
-| 7 | **Travas por perda** (R2) | Perda diária ou perdas seguidas criam trava global. | `RISK_MAX_DAILY_LOSS(_PCT)`, `RISK_MAX_CONSECUTIVE_LOSSES` |
+| 6 | **Candles atrasados ou inválidos** | Candle que chega atrasado (volta de suspensão, boot) ou incoerente não gera sinal; a janela inteira da estratégia é conferida, e 3 janelas inválidas seguidas travam o ativo. | `CANDLE_MAX_EMIT_LAG_S`, `HALT_MARKET_DATA_RUNS`, `MARKET_DATA_MAX_GAP_BARS` |
+| 7 | **Travas por perda** (R2, Fase 5) | Perda diária, perdas seguidas ou queda de 10% a partir do pico do capital criam trava global. | `RISK_MAX_DAILY_LOSS(_PCT)`, `RISK_MAX_CONSECUTIVE_LOSSES`, `RISK_MAX_DRAWDOWN_PCT` |
 | 8 | **Travas operacionais** (R3) | Falhas de reconciliação, de API ou de proteção criam trava. | `HALT_*` |
 | 9 | **Limpeza no boot** | Opcionalmente fecha posições e cancela SL/TP órfãos ao iniciar. | `CLOSE_POSITIONS_ON_BOOT`, `CANCEL_PROTECTIVE_ORDERS_ON_CLOSE` |
 
@@ -126,12 +127,15 @@ motivo) e pelo painel **Trava de trading** no Grafana.
 | `manual` | Alguém pausou. | A nota da pausa. | Quando o motivo da pausa acabar. |
 | `daily_loss` | O P&L do dia (realizado desde 00:00 UTC + não realizado) passou do limite. | Painel de resultado e os últimos round trips: perdas normais da estratégia ou algo anormal (slippage, ordem duplicada)? | Depois de 00:00 UTC. Antes disso o P&L do dia continua abaixo do limite e o próximo sinal cria a trava de novo. |
 | `consecutive_losses` | N operações seguidas fecharam no prejuízo. | Se as perdas vieram de stops normais ou de algum erro; se o mercado mudou de regime. | Depois de revisar. O `resume` zera a contagem: só contam as perdas fechadas depois da última liberação. Se as próximas N operações também perderem, trava de novo. |
+| `max_drawdown` | O capital (saldo + não realizado) caiu 10% abaixo do maior valor desde a última liberação desta trava. | Grafana (resultado e P&L acumulado) e `equity_snapshots`: perdas normais acumuladas ou algo anormal? | Depois de revisar a estratégia. O `resume` recomeça o pico do valor atual; se cair mais 10% a partir dali, trava de novo. |
 | `reconciliation` | Ordens no banco e na corretora não batem há 2 rodadas (≈ 10 min). | Tabela "Reconciliações com divergência não resolvida" no Grafana; as ordens abertas no site da Binance Demo. | Quando a divergência for explicada (ordem criada à mão, ordem antiga) e a reconciliação seguinte vier equilibrada. |
 | `reconciliation_error` | A reconciliação não conseguiu rodar 3 vezes seguidas. | Log do bot (`reconcile.failed`): internet, Binance fora, Postgres parado (`docker compose ps`). | Quando a causa for resolvida e o painel "Minutos desde a última reconciliação" voltar a zerar. |
 | `api_auth` | A Binance rejeitou a chave da API. | Rode `scripts/diagnose_binance_auth.py` (não mostra a chave). A chave pode ter sido revogada, expirada ou perdido permissão. | Depois de corrigir a chave no `.env` e reiniciar o bot. |
 | `api_errors` | 3 erros seguidos da corretora ao executar sinais. | Log (`trading_manager.signal_processing_skipped`) para ver o código do erro: margem insuficiente, quantidade mínima, instabilidade da Binance. | Quando a causa for entendida e corrigida. Um erro de margem pede revisão do tamanho das posições. |
 | `protection` (do ativo) | O stop-loss falhou e a posição foi zerada. | Log (`execution.flattening_after_stop_loss_failure`) e o código do erro da Binance. | Depois de entender o erro; trava só aquele ativo. |
 | `protection_failure` | O stop-loss falhou **e** o fechamento também. **Pode haver posição sem proteção.** | **Na hora:** a posição no site da Binance. Zere com `close_all_positions.py` ou à mão. Depois, o log. | Só depois de confirmar que não há posição desprotegida. |
+| `leverage` (do ativo) | No boot, a corretora recusou aplicar a alavancagem configurada (`RISK_MAX_LEVERAGE`) no ativo. | Log (`leverage.apply_failed`) e o código do erro da Binance; a alavancagem do ativo no site. | Depois de aplicar a alavancagem certa (reiniciar o bot tenta de novo) ou ajustar `RISK_MAX_LEVERAGE`. |
+| `market_data` (do ativo) | 3 janelas seguidas de candles inválidos (preço incoerente, tempo fora de ordem ou mais de 3 barras faltando). | Log (`asset.invalid_market_data`) com o problema exato; o gráfico do ativo na Binance. | Quando os dados voltarem ao normal (o próximo candle válido já volta a gerar sinal, mas a trava precisa de `resume`). |
 | `unprotected_position` | Há posição aberta sem stop-loss ativo há 2 verificações (≈ 10 min). | **Na hora:** a posição e as ordens condicionais na Binance. Coloque o stop à mão ou zere a posição. | Depois que toda posição aberta tiver stop, ou não houver posição. |
 
 ---
@@ -147,7 +151,9 @@ Banco Postgres (migrações em `migrations/versions/`):
 | `trades` | Cada fill gravado a partir dos eventos de execução. |
 | `round_trips` | Operação completa (entrada até saída), com P&L, taxas e motivo de fechamento (stop, alvo, tempo, manual). |
 | `reconciliation_runs` | Cada reconciliação: ordens abertas dos dois lados, divergências e se ficou equilibrada. |
+| `equity_snapshots` | Foto do capital (saldo, não realizado e soma) a cada reconciliação: a curva do limite de drawdown. |
 | `trading_halts` | Travas ativas e o histórico de quem liberou e com qual nota. |
+| `market_metrics` | Coletor (fora do bot): open interest, long/short, volume taker, funding e livro de ofertas por ativo, a cada 5 min. Base para pesquisar estratégias com esses dados. |
 | `candles`, `trading_pairs`, `futures_position_snapshots` | Dados de mercado, cadastro de pares e fotos de posições. |
 
 O Grafana lê o banco com um usuário só de leitura (`grafana_ro`). Seções do
@@ -158,6 +164,21 @@ dashboard:
 - **Ordens**: ordens por status, SL/TP abertos e ordens rejeitadas.
 - **Dados de mercado**: último candle por ativo (se parou de atualizar, o stream caiu).
 - **Sinais e reconciliação**: decisões por hora, motivos de rejeição, minutos desde a última reconciliação e divergências.
+- **Mercado (coletor)**: por ativo, open interest e sua variação em 1 h/24 h, long/short, agressão taker, funding, desequilíbrio do livro e spread.
+
+**Alertas** (`docker/grafana/provisioning/alerting/`), avaliados a cada
+minuto e enviados ao Telegram quando `telegram.yml` está configurado (veja o
+README):
+
+| Alerta | Dispara quando |
+|---|---|
+| Trava de trading ativa | Qualquer trava ativa; uma mensagem por regra e escopo. `protection_failure` e `unprotected_position` saem como **URGENTE**. |
+| Bot sem reconciliar | Nenhuma reconciliação há mais de 15 min: o bot caiu, travou ou perdeu acesso à Binance ou ao banco. |
+| Perda do dia perto do limite | Prejuízo realizado desde 00:00 UTC abaixo de -60 USDT (a trava sai em cerca de -92). |
+
+Cada alerta avisa de novo a cada 4 h enquanto continuar, e manda "RESOLVIDO"
+quando acaba. Desligar o bot de propósito dispara "Bot sem reconciliar":
+silencie no Grafana (Alerting → Silences).
 
 Logs: JSON estruturado no stdout do container (`docker compose logs app`), em
 5 arquivos de 20 MB.
@@ -169,8 +190,13 @@ Logs: JSON estruturado no stdout do container (`docker compose logs app`), em
 **Nenhuma estratégia vai ao bot ao vivo sem passar pelo gate do laboratório**
 (`app/backtest/gate.py`): ≥ 300 trades, limite inferior do IC 95% do
 resultado líquido > 0, ≥ 4 de 5 blocos de tempo positivos, profit factor > 1,1
-e drawdown ≤ 20%. A configuração principal é declarada **antes** de rodar,
-e parâmetros não são ajustados depois de ver o resultado.
+e drawdown ≤ 20%. Desde a Fase 4, também precisa **vencer o acaso**: o
+bruto médio é comparado com entradas aleatórias de mesmo lado e duração, e o
+p-valor é corrigido pelo número de hipóteses já declaradas
+(`docs/research/hypotheses.json`) — quanto mais tentativas, mais exigente.
+A configuração principal é declarada **antes** de rodar, e parâmetros não são
+ajustados depois de ver o resultado; varreduras de parâmetros (`--sweep`)
+servem só para medir sensibilidade.
 
 | Data | Hipótese | Resultado |
 |---|---|---|

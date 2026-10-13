@@ -18,6 +18,12 @@ class RiskLimits:
 
     max_position_notional_per_symbol: Decimal = Decimal(10000)
     max_total_notional: Decimal = Decimal(50000)
+    # Exposição total máxima como múltiplo do equity (0 desliga).
+    max_total_exposure_x: Decimal = Decimal(0)
+    # Folga sobre a margem inicial exigida (0 desliga a checagem de margem).
+    margin_buffer: Decimal = Decimal(0)
+    # Drawdown máximo a partir do pico do capital, em % (0 desliga).
+    max_drawdown_pct: Decimal = Decimal(0)
     max_leverage: int = 10
     max_daily_loss: Decimal = Decimal(1000)
     # Perda diária máxima em % do equity (0 desliga). Vale o mais restritivo

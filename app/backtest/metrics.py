@@ -83,4 +83,27 @@ def compute_metrics(
             max_dd = max(max_dd, dd)
         metrics["max_drawdown_pct"] = max_dd * 100
 
+        metrics["max_dd_duration_days"] = max_drawdown_duration_days(equity_curve)
+
     return metrics
+
+
+def max_drawdown_duration_days(equity_curve: list[tuple[datetime, Decimal]]) -> float:
+    """Maior tempo (dias) abaixo de um pico anterior, do pico até recuperá-lo
+    (ou até o fim da curva, se não recuperou)."""
+    if len(equity_curve) < 2:
+        return 0.0
+    peak_value, peak_time = equity_curve[0][1], equity_curve[0][0]
+    longest = 0.0
+    underwater = False
+    for ts, value in equity_curve[1:]:
+        if value >= peak_value:
+            if underwater:
+                longest = max(longest, (ts - peak_time).total_seconds() / 86400)
+            peak_value, peak_time, underwater = value, ts, False
+        else:
+            underwater = True
+    last_ts, last_value = equity_curve[-1]
+    if last_value < peak_value:
+        longest = max(longest, (last_ts - peak_time).total_seconds() / 86400)
+    return longest

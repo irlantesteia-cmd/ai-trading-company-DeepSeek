@@ -158,7 +158,8 @@ async def test_run_lab_end_to_end_with_fake_data():
     assert report.overall.trades == sum(r.stats.trades for r in report.runs) > 0
     assert sum(f.stats.trades for f in report.folds) == report.overall.trades
     assert sum(s.trades for s in report.by_trend.values()) == report.overall.trades
-    assert len(report.verdict.checks) == 5
+    assert len(report.verdict.checks) == 6  # 5 do gate + timing contra o acaso (Fase 4)
+    assert report.verdict.checks[-1].name == "timing_vs_aleatorio"
     md = to_markdown(report)
     assert "## Veredito" in md and ("APROVADA" in md or "REPROVADA" in md)
 

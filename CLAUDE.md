@@ -107,7 +107,9 @@ bar's open with SL/TP anchored to the fill, stop beats target on the same bar, o
 trailing stop, real funding (long pays / short receives), notional cap, and ruin below 1% equity.
 `regime.py` labels bars causally; `stats.py` does bootstrap CIs and walk-forward folds;
 `gate.py` is the promotion gate (≥300 trades, CI95 lower bound > 0, ≥4/5 positive folds, PF > 1.1,
-max DD ≤ 20%); `lab.py` + `scripts/strategy_lab.py` run strategy × symbols × intervals and write
+max DD ≤ 20%, and — per-trade lab — random-timing placebo p ≤ 0.05 after Bonferroni over the declared
+hypotheses in `docs/research/hypotheses.json`; `benchmarks.py`, `registry.py`); `sweep.py` runs
+exploratory parameter grids (`--sweep`), and `--declared ID` appends an official verdict; `lab.py` + `scripts/strategy_lab.py` run strategy × symbols × intervals and write
 reports to `artifacts/lab/`. A strategy reaches the live bot only after passing the gate;
 `trend_breakout` is lab-only for now. Results so far: `momentum` rejected (≈0 gross edge),
 `trend_breakout` rejected (gross edge concentrated in one year).
@@ -121,6 +123,15 @@ positions plus a minimum number of periods.
 .\.venv\Scripts\python scripts/strategy_lab.py --strategy momentum --intervals 5m,15m,1h --days 180 --hold-bars 6
 .\.venv\Scripts\python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 --trailing-stop --funding
 ```
+
+### Market data collector
+
+`scripts/run_collector.py` (compose service `collector`, no `.env`, `restart: unless-stopped`) runs
+`app/market/collector.py` independently of the bot: every 5 min it stores public derivatives data
+(open interest, long/short ratios, taker volume, premium/funding, top-20 book) for
+`COLLECTOR_SYMBOLS` into `market_metrics` (one row per symbol and 5-min block; sources merge
+via a non-null-wins upsert) and backfills up to ~30 days on start, since Binance keeps no longer
+history. It is the data source for research on non-price signals.
 
 ### Data and tests
 

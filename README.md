@@ -89,6 +89,30 @@ docker compose up -d grafana
 # http://127.0.0.1:3000 — dashboard "Trading — visão geral" (pasta Trading)
 ```
 
+Alertas por Telegram (trava ativa, bot sem reconciliar, perda do dia perto do
+limite): crie um bot no @BotFather, mande uma mensagem a ele e pegue o chat id
+em `https://api.telegram.org/bot<TOKEN>/getUpdates`. Depois:
+
+```powershell
+Copy-Item docker/grafana/provisioning/alerting/telegram.yml.example docker/grafana/provisioning/alerting/telegram.yml
+# edite telegram.yml: token e chat id (o arquivo fica fora do git)
+docker compose restart grafana
+```
+
+### Coletor de métricas de mercado
+
+Grava a cada 5 min, para 12 ativos, dados de derivativos que a Binance só
+guarda por ~30 dias (ou nem guarda): open interest, razões long/short, volume
+taker, funding, preço de marcação e o livro de ofertas. Roda separado do bot,
+só lê dados públicos (sem chave, sem ordens) e completa os últimos 30 dias ao
+iniciar. Painéis na seção **Mercado (coletor)** do Grafana.
+
+```powershell
+alembic upgrade head                      # cria a tabela market_metrics
+docker compose up -d --build collector
+docker compose logs -f collector
+```
+
 ### Trava de trading (intervenção humana)
 
 Bloqueia **novas entradas** na hora, sem reiniciar o bot; posições abertas
@@ -117,6 +141,17 @@ Binance com cache em `data/klines/`; relatório em `artifacts/lab/`.
 ```powershell
 python scripts/strategy_lab.py --strategy momentum --intervals 5m,15m,1h --days 180 --hold-bars 6
 python scripts/strategy_lab.py --strategy momentum --fee maker --param stop_atr_mult=2
+```
+
+Todo veredito traz **benchmarks** (não operar, comprar e segurar e timing
+aleatório com o mesmo lado e duração) e o gate exige vencer o acaso, com o
+p-valor corrigido pelo número de hipóteses já declaradas
+(`docs/research/hypotheses.json`). Sensibilidade a parâmetros e registro de
+uma hipótese oficial:
+
+```powershell
+python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 --trailing-stop --funding --sweep channel_period=15,20,30 --sweep stop_atr_mult=2.5,3,3.5
+python scripts/strategy_lab.py --strategy trend_breakout --intervals 4h,1d --days 1750 --trailing-stop --funding --declared L6-minha-hipotese
 ```
 
 ### Scripts auxiliares

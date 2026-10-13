@@ -1,0 +1,58 @@
+[
+  {
+    "id": "L2-momentum",
+    "date": "2026-10-10",
+    "strategy": "momentum",
+    "params": {},
+    "universe": "BTC, ETH, SOL, XRP | 5m, 15m, 1h | 180 dias (2026-04-14 a 2026-10-11) | taker, saída em 6 barras",
+    "verdict": "REPROVADA",
+    "net_pct": -0.1417,
+    "ci95_low": -0.1503,
+    "timing_p": null,
+    "report": "artifacts/lab/20261011T025453Z_momentum",
+    "notes": "Bruto ~0 em todos os regimes; timing não medido (anterior à Fase 4a)."
+  },
+  {
+    "id": "L3b-trend-breakout",
+    "date": "2026-10-11",
+    "strategy": "trend_breakout",
+    "params": {},
+    "universe": "12 ativos | 4h, 1d | 1750 dias (2021-12-26 a 2026-10-10) | taker, stop móvel, funding real",
+    "verdict": "REPROVADA",
+    "net_pct": 0.1281,
+    "ci95_low": -0.1637,
+    "timing_p": 0.015,
+    "report": "artifacts/lab/20261011T033556Z_trend_breakout",
+    "notes": "Donchian 20 + 3 ATR declarado. timing_p da reexecução com benchmarks (20261012T060938Z, Fase 4a)."
+  },
+  {
+    "id": "L4b-xs-momentum",
+    "date": "2026-10-11",
+    "strategy": "xs_momentum",
+    "params": {
+      "lookback_days": 28,
+      "top_k": 3,
+      "rebalance_days": 7
+    },
+    "universe": "12 ativos | 1d | 1750 dias (2021-12-27 a 2026-10-10) | taker, funding real | unidade = semana",
+    "verdict": "REPROVADA",
+    "net_pct": 0.0565,
+    "ci95_low": -0.3617,
+    "timing_p": null,
+    "report": "artifacts/lab/20261011T035341Z_xs_momentum",
+    "notes": "Carteira long/short; valores por semana, não por trade."
+  },
+  {
+    "id": "L5a1-mean-reversion",
+    "date": "2026-10-12",
+    "strategy": "mean_reversion",
+    "params": {},
+    "universe": "12 ativos | 15m, 1h, 4h | 730 dias (2024-10-12 a 2026-10-12) | taker, funding real",
+    "verdict": "REPROVADA",
+    "net_pct": -0.1456,
+    "ci95_low": -0.1695,
+    "timing_p": null,
+    "report": "artifacts/lab/20261012T051513Z_mean_reversion",
+    "notes": "Bruto ~0 em todos os regimes."
+  }
+]

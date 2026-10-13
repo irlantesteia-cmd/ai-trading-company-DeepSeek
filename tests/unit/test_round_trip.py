@@ -19,6 +19,7 @@ from app.core.enums import (
 )
 from app.database.models.round_trip import RoundTripORM
 from app.domain.models.order import Order, OrderFill
+from app.events.event import OrderFilled
 
 
 def _fill(qty: str, price: str, fee: str = "0") -> OrderFill:
@@ -291,3 +292,93 @@ async def test_maybe_cancel_siblings_isolates_failure(
     await agent._maybe_cancel_siblings(order, TradeRole.EXIT.value)
 
     context.exchange.orders.cancel_all_algo_orders.assert_awaited_once()
+
+# --------------------------------------------- fills repetidos por dois caminhos
+class _Session:
+    """Sessão em memória: `trades` vazia (o TradeRecorder grava depois deste
+    agente), ciclos em `trips`."""
+
+    def __init__(self, trips: list[RoundTripORM]) -> None:
+        self.trips = trips
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def execute(self, stmt):
+        return iter(())  # nenhum trade_id gravado ainda
+
+    def add(self, trip: RoundTripORM) -> None:
+        self.trips.append(trip)
+
+    async def commit(self) -> None:
+        pass
+
+
+def _fills(*qtys: str) -> list[OrderFill]:
+    return [
+        OrderFill(price=Decimal(100), quantity=Decimal(q), commission=Decimal(0),
+                  commission_asset="USDT", timestamp=datetime(2026, 10, 12, 3, 45, tzinfo=UTC),
+                  trade_id=str(546064238 + i))
+        for i, q in enumerate(qtys)
+    ]
+
+
+@pytest.fixture
+def live_agent(context: MagicMock, monkeypatch) -> tuple[RoundTripAgent, list[RoundTripORM]]:
+    trips: list[RoundTripORM] = []
+    context.session_factory = lambda: _Session(trips)
+    agent = RoundTripAgent(context)
+
+    async def open_trip(_session, symbol):
+        return next((t for t in reversed(trips)
+                     if t.symbol == symbol and t.status == "OPEN"), None)
+
+    monkeypatch.setattr(agent, "_get_open_trip", open_trip)
+    entry = _order(side=OrderSide.SELL).model_copy(update={"fills": _fills("10")})
+    trips.append(agent._new_trip(entry, entry.fills))  # SHORT de 10
+    return agent, trips
+
+
+def _event(order: Order) -> OrderFilled:
+    return OrderFilled(exchange_order_id=order.exchange_order_id, symbol=order.symbol,
+                       filled_quantity=float(order.executed_quantity),
+                       average_price=100.0, order=order)
+
+
+async def test_same_fills_from_rest_and_stream_are_counted_once(live_agent):
+    """Ao vivo (2026-10-12): o fechamento em vários fills chegou pelo REST
+    (todos) e pelo User Data Stream (um por evento); o ciclo fechou antes da
+    hora e o resto virou um ciclo fantasma."""
+    agent, trips = live_agent
+    fills = _fills("2.5", "2.5", "2.5", "2.5")
+    close = _order(side=OrderSide.BUY, client_order_id="tx-1").model_copy(
+        update={"exchange_order_id": "C-1"})
+    rest = close.model_copy(update={"fills": fills})
+    stream = [close.model_copy(update={"fills": [f]}) for f in fills]
+
+    await agent._on_order_filled(_event(stream[0]))
+    await agent._on_order_filled(_event(rest))
+    for order in stream[1:]:
+        await agent._on_order_filled(_event(order))
+
+    (trip,) = trips  # nenhum ciclo fantasma
+    assert trip.exit_quantity == Decimal(10)
+    assert trip.status == "CLOSED"
+
+
+async def test_concurrent_deliveries_are_serialized(live_agent):
+    import asyncio
+
+    agent, trips = live_agent
+    fills = _fills("4", "6")
+    close = _order(side=OrderSide.BUY, client_order_id="tx-2").model_copy(
+        update={"exchange_order_id": "C-2"})
+    events = [_event(close.model_copy(update={"fills": fills}))] + [
+        _event(close.model_copy(update={"fills": [f]})) for f in fills
+    ]
+    await asyncio.gather(*(agent._on_order_filled(e) for e in events))
+    (trip,) = trips
+    assert trip.exit_quantity == Decimal(10) and trip.status == "CLOSED"

@@ -19,6 +19,8 @@ class PortfolioState(DomainModel):
     """Snapshot do portfólio usado pelo motor de risco e pelo dimensionador."""
 
     equity: Decimal
+    # Saldo livre para margem nova (`availableBalance`); None = desconhecido.
+    available_balance: Decimal | None = None
     # P&L do dia (00:00 UTC): realizado (round trips fechados) + não realizado
     # (posições abertas). É o que o limite de perda diária avalia.
     daily_pnl: Decimal
@@ -26,6 +28,22 @@ class PortfolioState(DomainModel):
     # Round trips fechados com prejuízo em sequência (do mais recente para trás).
     consecutive_losses: int = 0
     active_halts: list[HaltInfo] = Field(default_factory=list)
+    # Maior capital (saldo + não realizado) desde a última liberação da trava
+    # de drawdown, incluindo o momento atual; None = sem histórico.
+    peak_equity: Decimal | None = None
+
+    @property
+    def total_equity(self) -> Decimal:
+        unrealized = sum((p.unrealized_pnl for p in self.open_positions), Decimal(0))
+        return self.equity + unrealized
+
+    @property
+    def drawdown_pct(self) -> Decimal:
+        """Queda atual a partir do pico, em % (0 sem pico)."""
+        peak = self.peak_equity
+        if peak is None or peak <= 0:
+            return Decimal(0)
+        return max(Decimal(0), (peak - self.total_equity) / peak * 100)
 
     def halt_for(self, symbol: str) -> HaltInfo | None:
         """Trava que bloqueia `symbol`: global primeiro, depois a do símbolo."""

@@ -83,8 +83,18 @@ class Settings(BaseSettings):
 
     # Risco
     risk_max_position_notional: float = 10_000.0
-    risk_max_total_notional: float = 50_000.0
-    risk_max_leverage: int = 10
+    risk_max_total_notional: float = 50_000.0  # teto absoluto (USDT)
+    # Fase 5: soma das posições (mais uma posição cheia) <= X × equity. 0 desliga.
+    risk_max_total_exposure_x: float = 2.0
+    # Alavancagem aplicada por ativo e usada no cálculo de margem.
+    risk_max_leverage: int = 3
+    # Margem exigida = notional da posição / alavancagem × folga; o saldo livre
+    # precisa cobrir. 0 desliga a checagem.
+    risk_margin_buffer: float = 1.2
+    # Drawdown máximo a partir do pico do capital (saldo + não realizado), em %.
+    # Cria trava global, liberada só manualmente; depois do resume o pico
+    # recomeça. 0 desliga.
+    risk_max_drawdown_pct: float = 10.0
     risk_max_daily_loss: float = 1_000.0
     # % do equity; o limite efetivo é o menor entre este e o absoluto.
     risk_max_daily_loss_pct: float = 3.0
@@ -128,6 +138,16 @@ class Settings(BaseSettings):
     github_default_branch: str = "main"
     github_autonomy_enabled: bool = False
 
+    # Coletor de métricas de mercado (scripts/run_collector.py, L5b). Dados
+    # públicos da Binance real (sem chave), independentes do bot.
+    collector_symbols: list[str] = [
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "ADAUSDT",
+        "DOGEUSDT", "LINKUSDT", "AVAXUSDT", "LTCUSDT", "DOTUSDT", "TRXUSDT",
+    ]
+    collector_interval_s: float = 300.0
+    collector_backfill_days: float = 29.5  # a Binance guarda ~30 dias
+    collector_base_url: str = "https://fapi.binance.com"
+
     # Runtime
     heartbeat_max_age_s: float = 120.0
     heartbeat_interval_s: float = 30.0
@@ -141,6 +161,11 @@ class Settings(BaseSettings):
     halt_api_errors: int = 3
     # Verificações seguidas com posição aberta sem stop-loss (com STOP_LOSS_ENABLED).
     halt_unprotected_runs: int = 2
+    # Janelas de candles inválidas seguidas (por ativo) antes da trava
+    # `market_data` do ativo. 0 = só descarta, sem trava.
+    halt_market_data_runs: int = 3
+    # Barras faltando seguidas que invalidam a janela (buracos menores só avisam).
+    market_data_max_gap_bars: int = 3
     # Saída por tempo: fecha posições abertas há mais que isto (minutos).
     # 0 desliga. Verificação a cada `time_exit_check_interval_s`.
     position_max_holding_minutes: float = 0.0

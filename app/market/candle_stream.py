@@ -24,6 +24,7 @@ from app.domain.models.market import Candle
 from app.events.bus import EventBus
 from app.events.event import CandleClosed
 from app.exchanges.base.exchange import Exchange
+from app.market.validation import candle_problem
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,18 @@ class CandleStreamService:
             self._last_emitted_open_time is not None
             and latest.open_time <= self._last_emitted_open_time
         ):
+            return None
+
+        problem = candle_problem(latest)
+        if problem is not None:
+            # Fase 5d: não dispara análise sobre candle incoerente. O agente do
+            # ativo valida a janela inteira e trava se o problema se repetir.
+            self._last_emitted_open_time = latest.open_time
+            logger.warning(
+                "candle_stream.invalid_skipped",
+                extra={"symbol": latest.symbol, "open_time": latest.open_time.isoformat(),
+                       "problem": problem},
+            )
             return None
 
         lag_s = (now - latest.close_time).total_seconds()

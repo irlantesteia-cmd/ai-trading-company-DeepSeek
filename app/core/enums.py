@@ -86,6 +86,9 @@ class RiskAction(StrEnum):
 class RoundTripStatus(StrEnum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
+    # Registro inválido mantido para auditoria (ex.: ciclo fantasma reparado por
+    # scripts/repair_split_round_trips.py); fica fora de todas as contas.
+    VOID = "VOID"
 
 
 class CloseReason(StrEnum):
