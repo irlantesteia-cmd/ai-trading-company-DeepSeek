@@ -127,3 +127,42 @@ groups:
           description: >-
             Perto do limite de perda diária (a trava sai em cerca de -92 USDT com
             3% de ~3.080). Acompanhe no Grafana.
+
+      # O modo sombra (Fase 6) grava um ciclo a cada vela de 4h: sem ciclo há
+      # mais de 5 h, o serviço `shadow` parou. Antes do primeiro ciclo, sem
+      # linhas, nada dispara.
+      - uid: shadow-silent
+        title: Modo sombra parado
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: pg-trading
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              rawSql: >-
+                SELECT EXTRACT(EPOCH FROM (now() - MAX(ran_at))) / 3600.0 AS value
+                FROM shadow_runs
+                HAVING COUNT(*) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Modo sombra sem ciclo há {{ printf \"%.1f\" .Values.B.Value }} h"
+          description: >-
+            O teste para a frente (sem ordens) parou de atualizar. Confira
+            `docker compose ps` e `docker compose logs --tail 100 shadow`.

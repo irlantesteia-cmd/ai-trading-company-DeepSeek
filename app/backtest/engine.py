@@ -88,11 +88,26 @@ class BacktestEngine:
         pending_bar = 0
         ruin_level = cfg.initial_capital * Decimal(str(cfg.ruin_equity_pct)) / 100
         ruined = False
+        skipped_vol = 0
+        first_entry = cfg.first_entry_time
 
         for i, bar in enumerate(candles):
             # 1) Entra o sinal pendente na abertura desta barra (sem capital, não entra)
             if pending is not None and open_trade is None and equity <= ruin_level:
                 ruined = True
+                pending = None
+            if pending is not None and first_entry is not None and bar.open_time < first_entry:
+                # Aquecimento (modo sombra): sinal anterior ao início não entra.
+                pending = None
+            if (
+                pending is not None
+                and open_trade is None
+                and cfg.skip_entry_vol
+                and regimes is not None
+                and regimes[pending_bar][1] in cfg.skip_entry_vol
+            ):
+                # Filtro de regime: o rótulo é o da barra do sinal (causal).
+                skipped_vol += 1
                 pending = None
             if pending is not None and open_trade is None:
                 open_trade = self._enter(pending, bar, equity)
@@ -153,6 +168,7 @@ class BacktestEngine:
             equity_curve=equity_curve,
         )
         metrics["ruined"] = 1.0 if ruined or equity <= ruin_level else 0.0
+        metrics["entries_skipped_vol"] = float(skipped_vol)
         # Exposição: % das barras com posição aberta.
         metrics["exposure_pct"] = 100 * sum(t.bars_held for t in trades) / len(candles)
         total_return_pct = float(

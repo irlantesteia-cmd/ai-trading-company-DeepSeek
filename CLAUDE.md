@@ -111,7 +111,9 @@ max DD ≤ 20%, and — per-trade lab — random-timing placebo p ≤ 0.05 after
 hypotheses in `docs/research/hypotheses.json`; `benchmarks.py`, `registry.py`); `sweep.py` runs
 exploratory parameter grids (`--sweep`), and `--declared ID` appends an official verdict; `lab.py` + `scripts/strategy_lab.py` run strategy × symbols × intervals and write
 reports to `artifacts/lab/`. A strategy reaches the live bot only after passing the gate;
-`trend_breakout` is lab-only for now. Results so far: `momentum` rejected (≈0 gross edge),
+`trend_breakout` is lab-only for now. `shadow.py` (Phase 6) is the forward test: it replays a lab
+config from a fixed start date T0 on each new candle (same `engine_config`, `first_entry_time` = T0,
+fixed warm-up before it) and stores hypothetical trades in `shadow_trades` — no orders. Results so far: `momentum` rejected (≈0 gross edge),
 `trend_breakout` rejected (gross edge concentrated in one year).
 
 Portfolio strategies (`xs_momentum`, cross-sectional long/short on daily bars) run through
@@ -132,6 +134,18 @@ positions plus a minimum number of periods.
 `COLLECTOR_SYMBOLS` into `market_metrics` (one row per symbol and 5-min block; sources merge
 via a non-null-wins upsert) and backfills up to ~30 days on start, since Binance keeps no longer
 history. It is the data source for research on non-price signals.
+
+`scripts/run_shadow.py` (compose service `shadow`, same pattern: no `.env`, public data only) runs
+`app/backtest/shadow_runner.py` once per 4h candle: it reads the hypothesis `SHADOW_HYPOTHESIS`
+(default `L6-shadow`) and its `shadow_start` (T0) from `docs/research/hypotheses.json` (bind-mounted
+read-only), replays every symbol × interval with `run_shadow` and writes `shadow_trades` plus one
+`shadow_runs` row per cycle. Without a registered T0 it only records `NOT_REGISTERED`; a T0 earlier
+than the registration date is refused. `L6-shadow` is pre-registered with T0 = 2026-10-15 00:00 UTC.
+`scripts/shadow_report.py` (`app/backtest/shadow_report.py`) applies the pre-registered stopping rule:
+interim look at the first 100 closed trades (informational only), final verdict at the first 300 closed
+trades or 12 months, with the lab gate and no Bonferroni (one confirmatory test). Each stage evaluates
+everything up to a fixed cutoff, so re-running later gives the same result. Don't change the rule or
+the T0 after the start.
 
 ### Data and tests
 

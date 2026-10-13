@@ -30,9 +30,9 @@
     "date": "2026-10-11",
     "strategy": "xs_momentum",
     "params": {
-      "lookback_days": 28,
-      "top_k": 3,
-      "rebalance_days": 7
+      "lookback_days": 28.0,
+      "top_k": 3.0,
+      "rebalance_days": 7.0
     },
     "universe": "12 ativos | 1d | 1750 dias (2021-12-27 a 2026-10-10) | taker, funding real | unidade = semana",
     "verdict": "REPROVADA",
@@ -54,5 +54,32 @@
     "timing_p": null,
     "report": "artifacts/lab/20261012T051513Z_mean_reversion",
     "notes": "Bruto ~0 em todos os regimes."
+  },
+  {
+    "id": "L6-trend-vol-filter",
+    "date": "2026-10-13",
+    "strategy": "trend_breakout",
+    "params": {},
+    "universe": "12 ativos | 4h, 1d | 2020-01-01 a 2021-12-25 (725 dias, FORA da amostra do L3b) | taker, stop móvel, funding real | sem entrada com volatilidade ALTA",
+    "verdict": "REPROVADA",
+    "net_pct": 1.0503415307981534,
+    "ci95_low": 0.2671796153908261,
+    "timing_p": 0.05472636815920398,
+    "report": "artifacts/lab/20261013T150922Z_trend_breakout",
+    "notes": "Passou 5/6 critérios (IC inf. +0,27%, 4/5 blocos, PF 1,26, DD 10%); reprovado no timing contra o acaso (p=0,055 sem correção; 0,274 com 5 hipóteses). Sem filtro no mesmo período: líquido +0,23%/trade e volatilidade ALTA com -1,76%/trade (o efeito visto no L3b se repetiu fora da amostra). Período de alta forte (comprar e segurar +2.032%); no 1d o filtro quase não atuou (classificador precisa de 500 barras)."
+  },
+  {
+    "id": "L6-shadow",
+    "date": "2026-10-13",
+    "strategy": "trend_breakout",
+    "params": {},
+    "universe": "12 ativos (BTC, ETH, SOL, XRP, BNB, ADA, DOGE, LINK, AVAX, LTC, DOT, TRX) | 4h, 1d | PARA A FRENTE a partir de 2026-10-15 00:00 UTC | taker, stop móvel, funding real | sem entrada com volatilidade ALTA | mesmas regras do L6b, sem ordens",
+    "verdict": "EM TESTE",
+    "net_pct": null,
+    "ci95_low": null,
+    "timing_p": null,
+    "report": null,
+    "notes": "Pré-registro do teste para a frente (modo sombra) da L6, registrado antes do início. Regra de parada: olhada intermediária nos 100 primeiros trades fechados, só informativa (nunca aprova nem encerra); avaliação final nos 300 primeiros trades fechados ou em 12 meses desde o início, o que vier primeiro, com o mesmo gate do laboratório (>=300 trades, IC 95% > 0, >=4/5 blocos, PF > 1,1, DD <= 20%, timing contra o acaso p <= 0,05). Teste confirmatório de uma hipótese escolhida antes dos dados: sem correção de Bonferroni. Cada estágio tem corte fixo (saída do 100º/300º trade ou início + 12 meses); posições abertas no corte não contam. Em 12 meses sem 300 trades, não aprovada. Relatório: scripts/shadow_report.py.",
+    "shadow_start": "2026-10-15T00:00:00+00:00"
   }
 ]

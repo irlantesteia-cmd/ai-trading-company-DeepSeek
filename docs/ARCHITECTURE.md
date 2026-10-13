@@ -104,6 +104,38 @@ docker compose --profile bot stop app               # desliga
   volta depois de reiniciar o PC ou o Docker: suba de novo com o comando acima.
 - Para zerar todas as posições na hora: `.\.venv\Scripts\python scripts/close_all_positions.py`.
 
+### Modo sombra (teste para a frente, sem ordens)
+
+```powershell
+.\.venv\Scripts\alembic upgrade head
+docker compose up -d --build shadow                 # liga (não usa .env nem chave)
+docker compose logs --tail 50 shadow                # um ciclo por vela de 4h
+```
+
+O serviço `shadow` refaz a simulação da estratégia L6 desde o T0 registrado
+em `docs/research/hypotheses.json` (montado no container só para leitura) e
+grava os trades hipotéticos. Sem a hipótese registrada com `shadow_start`, ele
+grava o ciclo como `NOT_REGISTERED` e não simula nada: o teste só começa com
+pré-registro. Ligado e esquecido; volta sozinho depois de reiniciar o Docker.
+
+O teste registrado é o `L6-shadow`, com início em **15/10/2026 00:00 UTC**. A
+regra de parada também foi registrada antes do início:
+
+| Estágio | Quando | O que vale |
+|---|---|---|
+| Coletando | Menos de 100 trades fechados | Só a contagem. |
+| Olhada intermediária | 100 trades fechados | Estatística dos 100 primeiros, **só informativa**: não aprova nem encerra. |
+| Final | 300 trades fechados ou 12 meses desde o início (o que vier primeiro) | Mesmo gate do laboratório, sem correção de Bonferroni (um teste confirmatório). Em 12 meses sem 300 trades, não é aprovada. |
+
+Cada estágio tem um corte fixo (a saída do 100º ou do 300º trade, ou o início
+mais 12 meses), então rodar o relatório mais tarde dá o mesmo resultado:
+
+```powershell
+.\.venv\Scripts\python scripts/shadow_report.py   # estágio + relatório em artifacts/shadow/
+```
+
+O veredito final entra no registro de hipóteses por PR.
+
 ### Travas
 
 ```powershell
@@ -154,6 +186,8 @@ Banco Postgres (migrações em `migrations/versions/`):
 | `equity_snapshots` | Foto do capital (saldo, não realizado e soma) a cada reconciliação: a curva do limite de drawdown. |
 | `trading_halts` | Travas ativas e o histórico de quem liberou e com qual nota. |
 | `market_metrics` | Coletor (fora do bot): open interest, long/short, volume taker, funding e livro de ofertas por ativo, a cada 5 min. Base para pesquisar estratégias com esses dados. |
+| `shadow_trades` | Modo sombra (Fase 6, fora do bot): trades hipotéticos de uma estratégia do laboratório em dados novos, sem ordens. Uma linha por entrada; a posição aberta (`OPEN`) é atualizada até fechar. |
+| `shadow_runs` | Cada ciclo do modo sombra: status do registro, fluxos com falha ou atrasados, trades e posições abertas. Base do alerta de serviço parado. |
 | `candles`, `trading_pairs`, `futures_position_snapshots` | Dados de mercado, cadastro de pares e fotos de posições. |
 
 O Grafana lê o banco com um usuário só de leitura (`grafana_ro`). Seções do
@@ -165,6 +199,7 @@ dashboard:
 - **Dados de mercado**: último candle por ativo (se parou de atualizar, o stream caiu).
 - **Sinais e reconciliação**: decisões por hora, motivos de rejeição, minutos desde a última reconciliação e divergências.
 - **Mercado (coletor)**: por ativo, open interest e sua variação em 1 h/24 h, long/short, agressão taker, funding, desequilíbrio do livro e spread.
+- **Modo sombra (L6, sem ordens)**: trades fechados, líquido médio por trade, posições abertas com o stop móvel, resultado acumulado, últimos trades e a saúde do último ciclo. A decisão só vale na regra de parada pré-registrada; não decida antes olhando o painel.
 
 **Alertas** (`docker/grafana/provisioning/alerting/`), avaliados a cada
 minuto e enviados ao Telegram quando `telegram.yml` está configurado (veja o
@@ -175,6 +210,7 @@ README):
 | Trava de trading ativa | Qualquer trava ativa; uma mensagem por regra e escopo. `protection_failure` e `unprotected_position` saem como **URGENTE**. |
 | Bot sem reconciliar | Nenhuma reconciliação há mais de 15 min: o bot caiu, travou ou perdeu acesso à Binance ou ao banco. |
 | Perda do dia perto do limite | Prejuízo realizado desde 00:00 UTC abaixo de -60 USDT (a trava sai em cerca de -92). |
+| Modo sombra parado | Nenhum ciclo do serviço `shadow` há mais de 5 h (antes do primeiro ciclo, não dispara). |
 
 Cada alerta avisa de novo a cada 4 h enquanto continuar, e manda "RESOLVIDO"
 quando acaba. Desligar o bot de propósito dispara "Bot sem reconciliar":
@@ -204,6 +240,9 @@ servem só para medir sensibilidade.
 | 2026-10-10 | **Momentum intradiário** (5m, 15m, 1h) | Reprovada: ganho bruto ≈ 0; o custo (≈ 0,14% por trade) vira prejuízo. |
 | 2026-10-11 | **Rompimento de tendência** (Donchian, 4h e 1d, 12 ativos, desde 2021) | Reprovada: bruto +0,33% por trade, mas concentrado em um ano (nov/2024 a out/2025); drawdown 27%. |
 | 2026-10-11 | **Momentum entre ativos** (compra os 3 mais fortes, vende os 3 mais fracos, semanal) | Reprovada: o lado vendido perde, o último ano é negativo e o drawdown chega a 46%. |
+| 2026-10-12 | **Reversão à média** (15m, 1h, 4h, 12 ativos) | Reprovada: bruto ≈ 0 em todos os regimes. |
+| 2026-10-13 | **Tendência com filtro de volatilidade** (rompimento sem entrada em volatilidade alta; 2020–2021, fora da amostra) | Reprovada só no teste contra o acaso (p = 0,055; 0,274 corrigido). Passou os outros 5 critérios (+1,05% líquido por trade) e o efeito do filtro se repetiu fora da amostra, mas num período de alta forte. |
+| desde 2026-10-15 | **Mesma estratégia, para a frente** (`L6-shadow`, modo sombra, sem ordens) | Em teste: decisão nos 300 primeiros trades ou em 12 meses. |
 
 Os relatórios completos ficam em `artifacts/lab/` (fora do git). Os testes com
 12 ativos usam moedas listadas hoje (viés de sobrevivência), o que tende a

@@ -78,6 +78,11 @@ class LabConfig(BaseModel):
     # Hipóteses declaradas já testadas, incluindo esta (correção de Bonferroni
     # do p do timing aleatório). 1 = sem correção.
     tested_hypotheses: int = 1
+    # Fim do período (exclusivo). None = agora. No passado, delimita um teste
+    # fora da amostra: o período vai de `until - days` a `until`.
+    until: datetime | None = None
+    # Regimes de volatilidade em que nenhuma posição é aberta (ex.: ["HIGH"]).
+    skip_vol: list[str] = Field(default_factory=list)
     criteria: GateCriteria = Field(default_factory=GateCriteria)
 
 
@@ -125,6 +130,25 @@ def build_strategy(name: str, params: dict[str, float]) -> Strategy:
     return cls(**kwargs)
 
 
+def engine_config(config: LabConfig) -> BacktestConfig:
+    """Regras de simulação do laboratório (também usadas pelo modo sombra)."""
+    return BacktestConfig(
+        initial_capital=Decimal(str(config.initial_capital)),
+        risk_per_trade_pct=config.risk_per_trade_pct,
+        entry_fee_bps=config.entry_fee_bps,
+        exit_fee_bps=config.exit_fee_bps,
+        slippage_bps=config.slippage_bps,
+        max_holding_bars=config.hold_bars,
+        trailing_stop=config.trailing_stop,
+        skip_entry_vol=frozenset(config.skip_vol),
+        max_position_notional=(
+            Decimal(str(config.max_position_notional))
+            if config.max_position_notional is not None
+            else None
+        ),
+    )
+
+
 async def _default_loader(symbol: str, interval: str, days: float) -> list[Candle]:
     return await load_candles(symbol, interval, days=days)
 
@@ -133,31 +157,30 @@ async def _default_funding_loader(symbol: str, days: float) -> list[tuple[int, f
     return await load_funding(symbol, days=days)
 
 
+def _loaders_until(until: datetime) -> tuple[CandleLoader, FundingLoader]:
+    async def candles(symbol: str, interval: str, days: float) -> list[Candle]:
+        return await load_candles(symbol, interval, days=days, now=until)
+
+    async def funding(symbol: str, days: float) -> list[tuple[int, float]]:
+        return await load_funding(symbol, days=days, now=until)
+
+    return candles, funding
+
+
 async def run_lab(
     config: LabConfig,
     *,
     loader: CandleLoader | None = None,
     funding_loader: FundingLoader | None = None,
 ) -> LabReport:
-    load = loader or _default_loader
-    load_fund = funding_loader or _default_funding_loader
-    funding_cache: dict[str, list[tuple[int, float]]] = {}
-    engine = BacktestEngine(
-        BacktestConfig(
-            initial_capital=Decimal(str(config.initial_capital)),
-            risk_per_trade_pct=config.risk_per_trade_pct,
-            entry_fee_bps=config.entry_fee_bps,
-            exit_fee_bps=config.exit_fee_bps,
-            slippage_bps=config.slippage_bps,
-            max_holding_bars=config.hold_bars,
-            trailing_stop=config.trailing_stop,
-            max_position_notional=(
-                Decimal(str(config.max_position_notional))
-                if config.max_position_notional is not None
-                else None
-            ),
-        )
+    default_load, default_fund = (
+        _loaders_until(config.until) if config.until is not None
+        else (_default_loader, _default_funding_loader)
     )
+    load = loader or default_load
+    load_fund = funding_loader or default_fund
+    funding_cache: dict[str, list[tuple[int, float]]] = {}
+    engine = BacktestEngine(engine_config(config))
     runs: list[RunSummary] = []
     trades: list[BacktestTrade] = []
     timing_runs: list[tuple[list[Candle], list[BacktestTrade]]] = []
@@ -203,8 +226,21 @@ async def run_lab(
             )
     if not runs:
         raise ValueError("nenhum candle carregado")
+    return assess(config, runs=runs, trades=trades, timing_runs=timing_runs,
+                  period_start=min(starts), period_end=max(ends))
 
-    period_start, period_end = min(starts), max(ends)
+
+def assess(
+    config: LabConfig,
+    *,
+    runs: list[RunSummary],
+    trades: list[BacktestTrade],
+    timing_runs: list[tuple[list[Candle], list[BacktestTrade]]],
+    period_start: datetime,
+    period_end: datetime,
+) -> LabReport:
+    """Estatística, walk-forward, timing contra o acaso e gate sobre trades já
+    simulados (laboratório e avaliação do modo sombra)."""
     overall = summarize(trades)
     ci = bootstrap_mean_ci([t.return_pct for t in trades], seed=config.seed)
     folds = walk_forward(trades, start=period_start, end=period_end, folds=config.folds)
@@ -310,6 +346,7 @@ def to_markdown(r: LabReport) -> str:
             f"derrapagem {c.slippage_bps} bps | saída por tempo: {c.hold_bars or 'não'} barras"
             f" | stop móvel: {'sim' if c.trailing_stop else 'não'}"
             f" | funding: {'real' if c.funding else 'não'} | parâmetros: {c.params or 'padrão'}"
+            f" | sem entrada em volatilidade: {', '.join(c.skip_vol) or 'nenhum filtro'}"
         ),
         "",
         "## Veredito",
