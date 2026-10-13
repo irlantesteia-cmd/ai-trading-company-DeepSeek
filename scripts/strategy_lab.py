@@ -29,7 +29,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -82,6 +82,15 @@ def _grid(value: str) -> tuple[str, list[float]]:
     return key.strip(), values
 
 
+def _until(value: str) -> datetime:
+    """Dia final inclusivo → 00:00 UTC do dia seguinte (fim exclusivo)."""
+    try:
+        day = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("use AAAA-MM-DD, ex.: 2021-12-25") from exc
+    return day + timedelta(days=1)
+
+
 def parse_args(argv: list[str] | None = None) -> LabConfig | portfolio_lab.PortfolioLabConfig:
     return parse_cli(argv)[0]
 
@@ -112,6 +121,10 @@ def parse_cli(
                    help="parâmetro da estratégia (repetível), ex.: stop_atr_mult=2")
     p.add_argument("--folds", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--until", type=_until, default=None,
+                   help="último dia do período (AAAA-MM-DD, inclusivo); padrão: hoje")
+    p.add_argument("--skip-vol", default="",
+                   help="regimes de volatilidade sem novas entradas, ex.: HIGH ou HIGH,LOW")
     p.add_argument("--sweep", type=_grid, action="append", default=[],
                    help="grade de sensibilidade (repetível), ex.: channel_period=15,20,30")
     p.add_argument("--declared", default=None,
@@ -158,6 +171,8 @@ def parse_cli(
         folds=a.folds,
         seed=a.seed,
         tested_hypotheses=tested,
+        until=a.until,
+        skip_vol=[v.strip().upper() for v in a.skip_vol.split(",") if v.strip()],
     ), grid, a.declared
 
 

@@ -34,6 +34,9 @@ class BacktestConfig(DomainModel):
     # Stop móvel: acompanha o melhor preço desde a entrada mantendo a distância
     # inicial do stop; nunca afrouxa. Para estratégias de tendência sem alvo.
     trailing_stop: bool = False
+    # Filtro de regime (L6): não abre posição quando a volatilidade na barra
+    # do sinal está num destes rótulos (ex.: {"HIGH"}). Exige `regimes`.
+    skip_entry_vol: frozenset[str] = frozenset()
 
 
 class BacktestTrade(DomainModel):
