@@ -72,7 +72,7 @@ Da mais próxima da ordem para a mais ampla. Toda configuração fica no `.env`
 | 3 | **SL/TP na corretora** | Criados logo após o fill, **ancorados no preço executado** (não no preço do sinal). | `STOP_LOSS_ENABLED`, `TAKE_PROFIT_ENABLED` |
 | 4 | **Stop que falha** | Se o stop-loss não puder ser criado, a posição é fechada a mercado na hora. | `CLOSE_ON_STOP_LOSS_FAILURE` |
 | 5 | **Saída por tempo** | Fecha posições abertas há mais de N minutos. | `POSITION_MAX_HOLDING_MINUTES` |
-| 6 | **Candles atrasados** | Candle que chega atrasado (volta de suspensão, boot) não gera sinal. | `CANDLE_MAX_EMIT_LAG_S` |
+| 6 | **Candles atrasados ou inválidos** | Candle que chega atrasado (volta de suspensão, boot) ou incoerente não gera sinal; a janela inteira da estratégia é conferida, e 3 janelas inválidas seguidas travam o ativo. | `CANDLE_MAX_EMIT_LAG_S`, `HALT_MARKET_DATA_RUNS`, `MARKET_DATA_MAX_GAP_BARS` |
 | 7 | **Travas por perda** (R2, Fase 5) | Perda diária, perdas seguidas ou queda de 10% a partir do pico do capital criam trava global. | `RISK_MAX_DAILY_LOSS(_PCT)`, `RISK_MAX_CONSECUTIVE_LOSSES`, `RISK_MAX_DRAWDOWN_PCT` |
 | 8 | **Travas operacionais** (R3) | Falhas de reconciliação, de API ou de proteção criam trava. | `HALT_*` |
 | 9 | **Limpeza no boot** | Opcionalmente fecha posições e cancela SL/TP órfãos ao iniciar. | `CLOSE_POSITIONS_ON_BOOT`, `CANCEL_PROTECTIVE_ORDERS_ON_CLOSE` |
@@ -135,6 +135,7 @@ motivo) e pelo painel **Trava de trading** no Grafana.
 | `protection` (do ativo) | O stop-loss falhou e a posição foi zerada. | Log (`execution.flattening_after_stop_loss_failure`) e o código do erro da Binance. | Depois de entender o erro; trava só aquele ativo. |
 | `protection_failure` | O stop-loss falhou **e** o fechamento também. **Pode haver posição sem proteção.** | **Na hora:** a posição no site da Binance. Zere com `close_all_positions.py` ou à mão. Depois, o log. | Só depois de confirmar que não há posição desprotegida. |
 | `leverage` (do ativo) | No boot, a corretora recusou aplicar a alavancagem configurada (`RISK_MAX_LEVERAGE`) no ativo. | Log (`leverage.apply_failed`) e o código do erro da Binance; a alavancagem do ativo no site. | Depois de aplicar a alavancagem certa (reiniciar o bot tenta de novo) ou ajustar `RISK_MAX_LEVERAGE`. |
+| `market_data` (do ativo) | 3 janelas seguidas de candles inválidos (preço incoerente, tempo fora de ordem ou mais de 3 barras faltando). | Log (`asset.invalid_market_data`) com o problema exato; o gráfico do ativo na Binance. | Quando os dados voltarem ao normal (o próximo candle válido já volta a gerar sinal, mas a trava precisa de `resume`). |
 | `unprotected_position` | Há posição aberta sem stop-loss ativo há 2 verificações (≈ 10 min). | **Na hora:** a posição e as ordens condicionais na Binance. Coloque o stop à mão ou zere a posição. | Depois que toda posição aberta tiver stop, ou não houver posição. |
 
 ---

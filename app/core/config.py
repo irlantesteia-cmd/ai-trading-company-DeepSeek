@@ -161,6 +161,11 @@ class Settings(BaseSettings):
     halt_api_errors: int = 3
     # Verificações seguidas com posição aberta sem stop-loss (com STOP_LOSS_ENABLED).
     halt_unprotected_runs: int = 2
+    # Janelas de candles inválidas seguidas (por ativo) antes da trava
+    # `market_data` do ativo. 0 = só descarta, sem trava.
+    halt_market_data_runs: int = 3
+    # Barras faltando seguidas que invalidam a janela (buracos menores só avisam).
+    market_data_max_gap_bars: int = 3
     # Saída por tempo: fecha posições abertas há mais que isto (minutos).
     # 0 desliga. Verificação a cada `time_exit_check_interval_s`.
     position_max_holding_minutes: float = 0.0
